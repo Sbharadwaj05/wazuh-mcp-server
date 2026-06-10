@@ -209,34 +209,11 @@ class WazuhClient:
         offset: int = 0,
         filters: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Search raw events in the indexer (POST required in Wazuh 4.x)."""
-        body: Dict[str, Any] = {}
-        if search:
-            body["search"] = search
-        if select:
-            body["select"] = select
-        if sort:
-            body["sort"] = sort
-        if limit:
-            body["limit"] = limit
-        if offset:
-            body["offset"] = offset
-        if filters:
-            body["filters"] = filters
-        # Try POST first (4.x), fall back to GET with params
-        try:
-            return await self._request("POST", "/events", json=body or None)
-        except WazuhAPIError:
-            params: Dict[str, Any] = {"limit": limit, "offset": offset}
-            if search:
-                params["search"] = search
-            if select:
-                params["select"] = select
-            if sort:
-                params["sort"] = sort
-            if filters:
-                params["q"] = ";".join(f"{k}={v}" for k, v in filters.items())
-            return await self._get("/events", params=params)
+        """Submit raw event strings for parsing by Wazuh analysis engine."""
+        body: Dict[str, Any] = {
+            "events": [search] if search else [],
+        }
+        return await self._request("POST", "/events", json=body)
 
     # ---- Agents -------------------------------------------------------
 
@@ -368,7 +345,7 @@ class WazuhClient:
             params["technique_id"] = technique_id
         if select:
             params["select"] = select
-        return await self._get("/mitre", params=params)
+        return await self._get("/mitre/techniques", params=params)
 
     # ---- Manager / Cluster --------------------------------------------
 
