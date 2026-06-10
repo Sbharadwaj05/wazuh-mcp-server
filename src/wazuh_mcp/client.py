@@ -432,3 +432,101 @@ class WazuhClient:
             body["arguments"] = arguments
 
         return await self._put("/active-response", json=body)
+
+    # ---- Agent Groups -------------------------------------------------
+
+    async def list_groups(
+        self,
+        *,
+        search: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """List agent groups."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if search:
+            params["search"] = search
+        return await self._get("/agents/groups", params=params)
+
+    async def get_group(self, group_id: str) -> Dict[str, Any]:
+        """Get agents belonging to a specific group."""
+        data = await self._get(f"/agents/groups/{group_id}")
+        items = data.get("affected_items", []) if isinstance(data, dict) else data
+        if not items:
+            raise WazuhAPIError(404, f"Group {group_id} not found")
+        return data
+
+    async def group_agents(
+        self,
+        group_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """List agents in a specific group."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        return await self._get(f"/agents/groups/{group_id}/agents", params=params)
+
+    # ---- Per-Node Cluster Stats ---------------------------------------
+
+    async def cluster_node_stats(self, node_id: str) -> Dict[str, Any]:
+        """Get detailed statistics for a specific cluster node."""
+        return await self._get(f"/cluster/{node_id}/stats")
+
+    async def cluster_node_info(self, node_id: str) -> Dict[str, Any]:
+        """Get configuration info for a specific cluster node."""
+        return await self._get(f"/cluster/{node_id}/info")
+
+    # ---- CDB Lists ----------------------------------------------------
+
+    async def list_cdb_lists(
+        self,
+        *,
+        search: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """List CDB (constant database) lists."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if search:
+            params["search"] = search
+        return await self._get("/lists", params=params)
+
+    async def get_cdb_list(
+        self,
+        list_name: str,
+        *,
+        search: Optional[str] = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Read the contents of a CDB list."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if search:
+            params["search"] = search
+        return await self._get(f"/lists/{list_name}/items", params=params)
+
+    # ---- Manager Logs -------------------------------------------------
+
+    async def manager_logs(
+        self,
+        *,
+        category: Optional[str] = None,  # "all", "ossec", "api"
+        search: Optional[str] = None,
+        sort: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Retrieve Wazuh manager logs."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if category:
+            params["category"] = category
+        if search:
+            params["search"] = search
+        if sort:
+            params["sort"] = sort
+        return await self._get("/manager/logs", params=params)
+
+    async def manager_logs_summary(self) -> Dict[str, Any]:
+        """Get a summary of manager log categories."""
+        return await self._get("/manager/logs/summary")

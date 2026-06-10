@@ -151,3 +151,70 @@ def register_manager(mcp: FastMCP, client: WazuhClient) -> None:
             return format_json(result)
         except Exception as e:
             return format_json({"error": str(e)})
+
+    @mcp.tool(
+        name="wazuh_manager_logs",
+        description=(
+            "Retrieve Wazuh manager logs for troubleshooting. "
+            "Filter by category ('ossec', 'api', 'all'), search for "
+            "specific errors or warnings, and paginate through results."
+        ),
+    )
+    async def wazuh_manager_logs(
+        category: Optional[str] = types.Field(
+            default=None,
+            description="Log category: 'all', 'ossec', or 'api'",
+        ),
+        search: Optional[str] = types.Field(
+            default=None,
+            description="Search logs for specific text (error messages, etc.)",
+        ),
+        limit: int = types.Field(
+            default=50,
+            description="Maximum log entries to return (1-200)",
+        ),
+        offset: int = types.Field(
+            default=0,
+            description="Pagination offset",
+        ),
+    ) -> str:
+        try:
+            data = await client.manager_logs(
+                category=category,
+                search=search,
+                sort="-timestamp",
+                limit=min(limit, 200),
+                offset=offset,
+            )
+            items = extract_items(data)
+            total = extract_total(data)
+            summary = "Manager logs"
+            if category:
+                summary += f" (category: {category})"
+            if search:
+                summary += f" matching '{search}'"
+            result = paginated_result(items, total, offset, limit, summary=summary)
+            return format_json(result)
+        except Exception as e:
+            return format_json({"error": str(e)})
+
+    @mcp.tool(
+        name="wazuh_cluster_node_stats",
+        description=(
+            "Get detailed statistics for a specific Wazuh cluster node. "
+            "Shows per-node EPS, queue sizes, daemon status, and resource "
+            "utilization. Essential for diagnosing cluster imbalances."
+        ),
+    )
+    async def wazuh_cluster_node_stats(
+        node_id: str = types.Field(
+            description="Cluster node ID to inspect (e.g., 'master-node', 'worker-1')",
+        ),
+    ) -> str:
+        try:
+            stats = await client.cluster_node_stats(node_id)
+            info = await client.cluster_node_info(node_id)
+            result = {"node_id": node_id, "configuration": info, "statistics": stats}
+            return format_json(result)
+        except Exception as e:
+            return format_json({"error": str(e)})
