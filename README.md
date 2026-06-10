@@ -17,6 +17,26 @@ One prompt. Your AI assistant queries 7,514 alerts, checks 5,038 FIM records, sc
 
 ---
 
+## How It Works (30 seconds)
+
+You already have Wazuh running somewhere. The MCP server is a **local process** that your AI client spawns as a child — just like a language server or linter.
+
+```
+Your Machine                              Your Wazuh Server
+┌────────────────────┐                   ┌──────────────────┐
+│ Zed / Claude       │                   │                  │
+│   │                │                   │  Wazuh API       │
+│   ▼                │                   │  :55000          │
+│ python -m          │───────HTTPS──────▶│                  │
+│ wazuh_mcp.server   │                   │  Wazuh Indexer   │
+│ (child process)    │───────HTTPS──────▶│  :9200           │
+└────────────────────┘                   └──────────────────┘
+```
+
+**No Docker required. No containers. No agents to install.** Just point it at your existing Wazuh and start asking questions in natural language.
+
+---
+
 ## 🛡️ Security Features (Defense in Depth)
 
 - [x] **Input validation** — Shell metacharacter blocking, regex for agent IDs, IPs, CVEs, MITRE IDs
@@ -93,7 +113,9 @@ cd wazuh-mcp-server
 pip install -e ".[dev]"
 ```
 
-### Docker (full stack)
+### Docker (one‑command demo — spins up Wazuh + MCP for testing)
+
+> ⚠️ **This bundles a full Wazuh stack for quick demos. In production, you already have Wazuh running — just use the pip install above and point to your existing Wazuh.**
 
 ```bash
 git clone https://github.com/Sbharadwaj05/wazuh-mcp-server.git
