@@ -4,38 +4,39 @@ on:
   push:
     branches: [master, main]
   schedule:
-    - cron: "0 6 * * 1"  # Every Monday at 06:00 UTC
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
 
 jobs:
   dependency-scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: "3.12"
 
       - name: Install dependencies
         run: |
-          pip install pip-audit
+          pip install pip-audit bandit
           pip install -e ".[dev]"
 
-      - name: Audit dependencies
+      - name: Audit dependencies (pip-audit)
         run: pip-audit --desc on
 
+      - name: Bandit SAST scan
+        run: python -m bandit -r src/wazuh_mcp/ -ll
+
   codeql:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       security-events: write
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: github/codeql-action/init@6e03c0bcc1b65e3aea811048af1a26004465db8a # v3.28.6
         with:
           languages: python
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+          queries: security-extended
+      - uses: github/codeql-action/analyze@6e03c0bcc1b65e3aea811048af1a26004465db8a # v3.28.6

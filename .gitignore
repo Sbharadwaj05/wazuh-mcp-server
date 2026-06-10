@@ -13,6 +13,15 @@ venv/
 # Environment
 .env
 .env.local
+*.env
+
+# Secrets & keys
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials/
 
 # IDE
 .vscode/
