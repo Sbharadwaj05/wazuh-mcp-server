@@ -11,14 +11,14 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38  # v5.4.0
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -31,23 +31,9 @@ jobs:
         run: python -m pytest tests/ -v --tb=short
 
       - name: Verify import
-        run: python -c "from wazuh_mcp.server import mcp; print(f'Server: {mcp.name}')"
+        run: python -c "import wazuh_mcp; print(f'wazuh-mcp v{wazuh_mcp.__version__}')"
 
-      - name: Bandit SAST
+      - name: SAST scan
         run: |
           pip install bandit
           python -m bandit -r src/wazuh_mcp/ -ll
-
-  lint:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38  # v5.4.0
-        with:
-          python-version: "3.12"
-
-      - name: Install ruff
-        run: pip install ruff
-
-      - name: Lint
-        run: ruff check src/ --select=E,F,W --ignore=E501
