@@ -89,7 +89,10 @@ class IndexerClient:
         total = hits.get("total", {})
         total_value = total.get("value", 0) if isinstance(total, dict) else total
 
-        items = [h.get("_source", {}) for h in hits.get("hits", [])]
+        items = [
+            {"_id": h.get("_id", ""), **h.get("_source", {})}
+            for h in hits.get("hits", [])
+        ]
 
         return {
             "affected_items": items,
@@ -135,16 +138,26 @@ class IndexerClient:
         )
 
     async def get_alert(self, alert_id: str) -> Dict[str, Any]:
-        """Fetch a single alert by its _id."""
+        """Fetch a single alert by its Wazuh alert ID or OpenSearch _id."""
+        # Try as OpenSearch doc _id first
         resp = await self._client.get(
             f"/wazuh-alerts-*/_doc/{alert_id}",
             auth=self._auth,
         )
-        resp.raise_for_status()
-        data = resp.json()
-        if not data.get("found"):
-            raise ValueError(f"Alert {alert_id} not found in indexer")
-        return data.get("_source", {})
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("found"):
+                return data.get("_source", {})
+        # Fallback: search by the alert's 'id' field
+        result = await self._search(
+            "wazuh-alerts-*",
+            {"term": {"id": alert_id}},
+            size=1,
+        )
+        items = result.get("affected_items", [])
+        if items:
+            return items[0]
+        raise ValueError(f"Alert {alert_id} not found in indexer")
 
     # ---- Vulnerabilities ----------------------------------------------
 

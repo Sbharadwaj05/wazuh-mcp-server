@@ -214,12 +214,17 @@ class WazuhClient:
             )
 
     async def get_alert(self, alert_id: str) -> Dict[str, Any]:
-        """Fetch a single alert by ID."""
-        data = await self._get("/alerts", params={"q": f"id={alert_id}", "limit": 1})
-        items = data.get("affected_items", []) if isinstance(data, dict) else data
-        if not items:
-            raise WazuhAPIError(404, f"Alert {alert_id} not found")
-        return items[0]
+        """Fetch a single alert — tries API, falls back to indexer."""
+        try:
+            data = await self._get(
+                "/alerts", params={"q": f"id={alert_id}", "limit": 1}
+            )
+            items = data.get("affected_items", []) if isinstance(data, dict) else data
+            if not items:
+                raise WazuhAPIError(404, f"Alert {alert_id} not found")
+            return items[0]
+        except WazuhAPIError:
+            return await self._indexer.get_alert(alert_id)
 
     # ---- Events (raw) -------------------------------------------------
 
@@ -382,11 +387,11 @@ class WazuhClient:
     # ---- Manager / Cluster --------------------------------------------
 
     async def manager_stats(self, daemon: Optional[str] = None) -> Dict[str, Any]:
-        """Retrieve Wazuh manager daemon statistics."""
+        """Retrieve Wazuh manager daemon statistics (uses /manager/daemons/stats)."""
         params = {}
         if daemon:
-            params["daemon"] = daemon
-        return await self._get("/manager/stats", params=params)
+            params["daemons_list"] = daemon
+        return await self._get("/manager/daemons/stats", params=params)
 
     async def manager_status(self) -> Dict[str, Any]:
         """Get Wazuh manager health status."""
@@ -419,23 +424,39 @@ class WazuhClient:
         limit: int = 100,
         offset: int = 0,
     ) -> Dict[str, Any]:
-        """List and search Wazuh detection rules."""
-        params: Dict[str, Any] = {"limit": limit, "offset": offset}
-        if search:
-            params["search"] = search
-        if level:
-            params["level"] = level
-        if pci:
-            params["pci_dss"] = pci
-        if gdpr:
-            params["gdpr"] = gdpr
-        if hipaa:
-            params["hipaa"] = hipaa
-        if nist_800_53:
-            params["nist_800_53"] = nist_800_53
-        if mitre:
-            params["mitre"] = mitre
-        return await self._get("/rules", params=params)
+        """
+        List/search Wazuh rules. Tries REST API first, falls back to
+        extracting rule data from the alerts index (Wazuh 4.x/5.x bug).
+        """
+        # Try /rules/files first (works), then extract rules from indexer alerts
+        try:
+            params: Dict[str, Any] = {"limit": limit, "offset": offset}
+            if search:
+                params["search"] = search
+            if level is not None:
+                params["level"] = str(level)
+            if pci:
+                params["pci_dss"] = pci
+            if gdpr:
+                params["gdpr"] = gdpr
+            if hipaa:
+                params["hipaa"] = hipaa
+            if nist_800_53:
+                params["nist_800_53"] = nist_800_53
+            if mitre:
+                params["mitre"] = mitre
+            return await self._get("/rules", params=params)
+        except WazuhAPIError:
+            # Wazuh 4.14.5 /rules endpoint returns 500 — extract from indexer
+            query_parts = []
+            if search:
+                query_parts.append(search)
+            if mitre:
+                query_parts.append(mitre)
+            qs = " ".join(query_parts) if query_parts else "*"
+            return await self._indexer.search_events(
+                search=qs, index="wazuh-alerts-*", limit=min(limit, 200), offset=offset
+            )
 
     # ---- Active Response ----------------------------------------------
 
@@ -521,11 +542,11 @@ class WazuhClient:
         limit: int = 50,
         offset: int = 0,
     ) -> Dict[str, Any]:
-        """List CDB (constant database) lists."""
+        """List CDB list files (uses /lists/files)."""
         params: Dict[str, Any] = {"limit": limit, "offset": offset}
         if search:
             params["search"] = search
-        return await self._get("/lists", params=params)
+        return await self._get("/lists/files", params=params)
 
     async def get_cdb_list(
         self,
@@ -535,11 +556,8 @@ class WazuhClient:
         limit: int = 200,
         offset: int = 0,
     ) -> Dict[str, Any]:
-        """Read the contents of a CDB list."""
-        params: Dict[str, Any] = {"limit": limit, "offset": offset}
-        if search:
-            params["search"] = search
-        return await self._get(f"/lists/{list_name}/items", params=params)
+        """Read a CDB list file (uses /lists/files/{name})."""
+        return await self._get(f"/lists/files/{list_name}")
 
     # ---- Manager Logs -------------------------------------------------
 
