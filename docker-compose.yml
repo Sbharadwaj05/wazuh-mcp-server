@@ -1,0 +1,127 @@
+# ---------------------------------------------------------------------------
+# Wazuh + MCP Server — single-node development stack
+# ---------------------------------------------------------------------------
+#
+# Quick start:
+#   1. docker compose up -d
+#   2. Wait ~2 min for Wazuh manager + indexer + dashboard to initialize
+#   3. Access Wazuh dashboard at https://localhost:443
+#      (user: admin, pass: SecretPassword — CHANGE IN PRODUCTION)
+#   4. The MCP server connects to the manager API at https://localhost:55000
+#
+# To use with Claude Desktop / Cursor, add to your MCP config:
+#   {
+#     "wazuh": {
+#       "command": "python",
+#       "args": ["-m", "wazuh_mcp.server"],
+#       "cwd": "/path/to/wazuh-mcp",
+#       "env": {
+#         "WAZUH_API_URL": "https://localhost:55000",
+#         "WAZUH_USERNAME": "admin",
+#         "WAZUH_PASSWORD": "SecretPassword",
+#         "WAZUH_INSECURE": "true"
+#       }
+#     }
+#   }
+# ---------------------------------------------------------------------------
+
+version: "3.8"
+
+services:
+  # ---- Wazuh Manager (API + analysis engine) ---------------------------
+  wazuh.manager:
+    image: wazuh/wazuh-manager:4.9.0
+    hostname: wazuh.manager
+    restart: unless-stopped
+    ports:
+      - "1514:1514/udp"   # Agent events
+      - "1515:1515/tcp"   # Agent registration
+      - "1516:1516/tcp"   # Agent registration (TLS)
+      - "55000:55000/tcp" # REST API
+    environment:
+      - INDEXER_URL=https://wazuh.indexer:9200
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=SecretPassword
+      - API_USERNAME=admin
+      - API_PASSWORD=SecretPassword
+      - FILEBEAT_SSL_VERIFICATION_MODE=certificate
+    volumes:
+      - wazuh_manager_data:/var/ossec/data
+      - ./config/wazuh_manager/ossec.conf:/var/ossec/etc/ossec.conf:ro
+    networks:
+      - wazuh-net
+    depends_on:
+      wazuh.indexer:
+        condition: service_healthy
+
+  # ---- Wazuh Indexer (OpenSearch fork) ---------------------------------
+  wazuh.indexer:
+    image: wazuh/wazuh-indexer:4.9.0
+    hostname: wazuh.indexer
+    restart: unless-stopped
+    ports:
+      - "9200:9200/tcp"
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+      - "DISABLE_INSTALL_DEMO_CONFIG=true"
+      - "DISABLE_SECURITY_PLUGIN=true"
+      - "discovery.type=single-node"
+      - "plugins.security.disabled=true"
+    volumes:
+      - wazuh_indexer_data:/usr/share/wazuh-indexer/data
+    networks:
+      - wazuh-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:9200"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # ---- Wazuh Dashboard (Web UI) ----------------------------------------
+  wazuh.dashboard:
+    image: wazuh/wazuh-dashboard:4.9.0
+    hostname: wazuh.dashboard
+    restart: unless-stopped
+    ports:
+      - "443:5601/tcp"
+    environment:
+      - INDEXER_URL=https://wazuh.indexer:9200
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=SecretPassword
+      - WAZUH_API_URL=https://wazuh.manager:55000
+      - API_USERNAME=admin
+      - API_PASSWORD=SecretPassword
+      - DASHBOARD_USERNAME=admin
+      - DASHBOARD_PASSWORD=SecretPassword
+      - SERVER_SSL_ENABLED=true
+      - SERVER_SSL_CERT=/usr/share/wazuh-dashboard/certs/dashboard.pem
+      - SERVER_SSL_KEY=/usr/share/wazuh-dashboard/certs/dashboard-key.pem
+    volumes:
+      - wazuh_dashboard_data:/usr/share/wazuh-dashboard/data
+    networks:
+      - wazuh-net
+    depends_on:
+      wazuh.indexer:
+        condition: service_healthy
+
+  # ---- Optional: MCP Server Container (uncomment to run in Docker) -----
+  # wazuh-mcp:
+  #   build: .
+  #   environment:
+  #     - WAZUH_API_URL=https://wazuh.manager:55000
+  #     - WAZUH_USERNAME=admin
+  #     - WAZUH_PASSWORD=SecretPassword
+  #     - WAZUH_INSECURE=true
+  #   networks:
+  #     - wazuh-net
+  #   depends_on:
+  #     - wazuh.manager
+
+volumes:
+  wazuh_manager_data:
+  wazuh_indexer_data:
+  wazuh_dashboard_data:
+
+networks:
+  wazuh-net:
+    driver: bridge

@@ -1,0 +1,434 @@
+"""
+Async HTTP client for the Wazuh REST API (v4.7+).
+
+Handles JWT authentication, automatic token refresh, pagination,
+and translates Wazuh error codes into Python exceptions.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+from typing import Any, Dict, List, Optional
+
+import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
+
+logger = logging.getLogger("wazuh-mcp.client")
+
+# ---------------------------------------------------------------------------
+# Configuration from environment
+# ---------------------------------------------------------------------------
+
+DEFAULT_BASE_URL = os.getenv("WAZUH_API_URL", "https://localhost:55000")
+DEFAULT_USERNAME = os.getenv("WAZUH_USERNAME", "admin")
+DEFAULT_PASSWORD = os.getenv("WAZUH_PASSWORD", "")
+DEFAULT_INSECURE = os.getenv("WAZUH_INSECURE", "false").lower() == "true"
+DEFAULT_TIMEOUT = int(os.getenv("WAZUH_TIMEOUT", "30"))
+
+
+class WazuhAPIError(Exception):
+    """Wraps a Wazuh API error response."""
+
+    def __init__(self, status_code: int, message: str, details: Any = None):
+        self.status_code = status_code
+        self.message = message
+        self.details = details
+        super().__init__(f"Wazuh API [{status_code}]: {message}")
+
+
+class WazuhClient:
+    """
+    Async HTTP client for the Wazuh manager REST API.
+
+    Authenticates once and transparently refreshes the JWT on expiry.
+    All public methods return the ``data`` field from the Wazuh JSON envelope.
+    """
+
+    def __init__(
+        self,
+        base_url: str = DEFAULT_BASE_URL,
+        username: str = DEFAULT_USERNAME,
+        password: str = DEFAULT_PASSWORD,
+        insecure: bool = DEFAULT_INSECURE,
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.username = username
+        self.password = password
+        self.timeout = timeout
+
+        self._client = httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=httpx.Timeout(timeout),
+            verify=not insecure,
+        )
+        self._token: Optional[str] = None
+        self._token_expiry: float = 0.0
+
+    # ------------------------------------------------------------------
+    # Authentication
+    # ------------------------------------------------------------------
+
+    async def login(self) -> None:
+        """Authenticate and cache a JWT token."""
+        resp = await self._client.post(
+            "/security/user/authenticate",
+            json={"user_id": self.username, "password": self.password},
+        )
+        data = self._unwrap(resp)
+        self._token = data["token"]
+        self._token_expiry = time.time() + 840  # refresh 60s before 900s expiry
+        logger.info("Wazuh API authentication successful")
+
+    async def _ensure_auth(self) -> None:
+        """Re-login if the token is missing or expired."""
+        if self._token is None or time.time() >= self._token_expiry:
+            await self.login()
+
+    # ------------------------------------------------------------------
+    # Low-level HTTP
+    # ------------------------------------------------------------------
+
+    async def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        return await self._request("GET", path, params=params)
+
+    async def _put(self, path: str, json: Optional[Dict[str, Any]] = None) -> Any:
+        return await self._request("PUT", path, json=json)
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+        json: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        await self._ensure_auth()
+        headers = {"Authorization": f"Bearer {self._token}"}
+        resp = await self._client.request(
+            method, path, params=params, json=json, headers=headers
+        )
+        return self._unwrap(resp)
+
+    @staticmethod
+    def _unwrap(resp: httpx.Response) -> Any:
+        """Parse the Wazuh JSON envelope ``{"data": ..., "error": 0}``."""
+        if resp.is_error:
+            text = resp.text[:500]
+            raise WazuhAPIError(resp.status_code, f"HTTP {resp.status_code}: {text}")
+
+        try:
+            body = resp.json()
+        except Exception:
+            raise WazuhAPIError(resp.status_code, "Invalid JSON response body")
+
+        error_code = body.get("error", -1)
+        if error_code != 0:
+            msg = body.get("message", "Unknown API error")
+            details = body.get("detail", "")
+            raise WazuhAPIError(error_code, f"{msg} — {details}" if details else msg)
+
+        return body.get("data", {})
+
+    async def close(self) -> None:
+        await self._client.aclose()
+
+    # ==================================================================
+    # Public API methods — organized by domain
+    # ==================================================================
+
+    # ---- Alerts -------------------------------------------------------
+
+    async def list_alerts(
+        self,
+        *,
+        agent_id: Optional[str] = None,
+        agents_list: Optional[str] = None,
+        min_level: Optional[int] = None,
+        rule_id: Optional[str] = None,
+        rule_ids: Optional[str] = None,
+        mitre_id: Optional[str] = None,
+        search: Optional[str] = None,
+        select: Optional[str] = None,
+        sort: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Query alerts from the Wazuh indexer."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if agent_id:
+            params["agent_id"] = agent_id
+        if agents_list:
+            params["agents_list"] = agents_list
+        if search:
+            params["search"] = search
+        if select:
+            params["select"] = select
+        if sort:
+            params["sort"] = sort
+
+        filters = []
+        if min_level is not None:
+            filters.append(f"rule.level>={min_level}")
+        if rule_id:
+            filters.append(f"rule.id={rule_id}")
+        if rule_ids:
+            filters.append(f"rule.id({rule_ids})")
+        if mitre_id:
+            filters.append(f"rule.mitre.id={mitre_id}")
+        if filters:
+            params["q"] = ";".join(filters)
+
+        return await self._get("/alerts", params=params)
+
+    async def get_alert(self, alert_id: str) -> Dict[str, Any]:
+        """Fetch a single alert by ID."""
+        data = await self._get("/alerts", params={"q": f"id={alert_id}", "limit": 1})
+        items = data.get("affected_items", []) if isinstance(data, dict) else data
+        if not items:
+            raise WazuhAPIError(404, f"Alert {alert_id} not found")
+        return items[0]
+
+    # ---- Events (raw) -------------------------------------------------
+
+    async def search_events(
+        self,
+        *,
+        search: Optional[str] = None,
+        select: Optional[str] = None,
+        sort: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+        filters: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Search raw events in the indexer."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if search:
+            params["search"] = search
+        if select:
+            params["select"] = select
+        if sort:
+            params["sort"] = sort
+        if filters:
+            params["q"] = ";".join(f"{k}={v}" for k, v in filters.items())
+        return await self._get("/events", params=params)
+
+    # ---- Agents -------------------------------------------------------
+
+    async def list_agents(
+        self,
+        *,
+        status: Optional[str] = None,
+        older_than: Optional[str] = None,
+        search: Optional[str] = None,
+        select: Optional[str] = None,
+        sort: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """List registered agents with optional filters."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if status:
+            params["status"] = status
+        if older_than:
+            params["older_than"] = older_than
+        if search:
+            params["search"] = search
+        if select:
+            params["select"] = select
+        if sort:
+            params["sort"] = sort
+        return await self._get("/agents", params=params)
+
+    async def get_agent(self, agent_id: str) -> Dict[str, Any]:
+        """Get full details for a single agent."""
+        data = await self._get(f"/agents/{agent_id}")
+        items = data.get("affected_items", []) if isinstance(data, dict) else data
+        if not items:
+            raise WazuhAPIError(404, f"Agent {agent_id} not found")
+        return items[0]
+
+    async def agent_summary(self) -> Dict[str, Any]:
+        """Get an overview of agent connection statuses."""
+        return await self._get("/agents/summary/status")
+
+    # ---- SCA (Security Configuration Assessment) ----------------------
+
+    async def sca_checks(
+        self,
+        agent_id: str,
+        *,
+        policy_id: Optional[str] = None,
+        search: Optional[str] = None,
+        result: Optional[str] = None,  # "passed" | "failed"
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Get SCA check results for an agent/policy."""
+        if policy_id:
+            path = f"/sca/{agent_id}/checks/{policy_id}"
+        else:
+            path = f"/sca/{agent_id}/checks"
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if search:
+            params["search"] = search
+        if result:
+            params["result"] = result
+        return await self._get(path, params=params)
+
+    async def sca_summary(self, agent_id: str = "000") -> Dict[str, Any]:
+        """Get SCA compliance summary for an agent."""
+        return await self._get(f"/sca/{agent_id}")
+
+    # ---- Syscheck / FIM -----------------------------------------------
+
+    async def syscheck(
+        self,
+        agent_id: str,
+        *,
+        file_path: Optional[str] = None,
+        event_type: Optional[str] = None,  # "added" | "modified" | "deleted"
+        search: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Query file-integrity monitoring records."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if file_path:
+            params["file"] = file_path
+        if event_type:
+            params["type"] = event_type
+        if search:
+            params["search"] = search
+        return await self._get(f"/syscheck/{agent_id}", params=params)
+
+    # ---- Vulnerabilities ----------------------------------------------
+
+    async def vulnerabilities(
+        self,
+        agent_id: str,
+        *,
+        cve: Optional[str] = None,
+        severity: Optional[str] = None,  # Critical | High | Medium | Low
+        search: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Query vulnerability-detector findings."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if cve:
+            params["cve"] = cve
+        if severity:
+            params["severity"] = severity
+        if search:
+            params["search"] = search
+        return await self._get(f"/vulnerability/{agent_id}", params=params)
+
+    # ---- MITRE ATT&CK -------------------------------------------------
+
+    async def mitre(
+        self,
+        *,
+        search: Optional[str] = None,
+        technique_id: Optional[str] = None,
+        select: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Query MITRE ATT&CK framework information from Wazuh."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if search:
+            params["search"] = search
+        if technique_id:
+            params["technique_id"] = technique_id
+        if select:
+            params["select"] = select
+        return await self._get("/mitre", params=params)
+
+    # ---- Manager / Cluster --------------------------------------------
+
+    async def manager_stats(self, daemon: Optional[str] = None) -> Dict[str, Any]:
+        """Retrieve Wazuh manager daemon statistics."""
+        params = {}
+        if daemon:
+            params["daemon"] = daemon
+        return await self._get("/manager/stats", params=params)
+
+    async def manager_status(self) -> Dict[str, Any]:
+        """Get Wazuh manager health status."""
+        return await self._get("/manager/status")
+
+    async def manager_info(self) -> Dict[str, Any]:
+        """Get Wazuh manager version and installation info."""
+        return await self._get("/manager/info")
+
+    async def cluster_nodes(self) -> Dict[str, Any]:
+        """List cluster nodes and their status."""
+        return await self._get("/cluster/nodes")
+
+    async def cluster_status(self) -> Dict[str, Any]:
+        """Get overall cluster health status."""
+        return await self._get("/cluster/status")
+
+    # ---- Rules --------------------------------------------------------
+
+    async def list_rules(
+        self,
+        *,
+        search: Optional[str] = None,
+        level: Optional[int] = None,
+        pci: Optional[str] = None,
+        gdpr: Optional[str] = None,
+        hipaa: Optional[str] = None,
+        nist_800_53: Optional[str] = None,
+        mitre: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """List and search Wazuh detection rules."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if search:
+            params["search"] = search
+        if level:
+            params["level"] = level
+        if pci:
+            params["pci_dss"] = pci
+        if gdpr:
+            params["gdpr"] = gdpr
+        if hipaa:
+            params["hipaa"] = hipaa
+        if nist_800_53:
+            params["nist_800_53"] = nist_800_53
+        if mitre:
+            params["mitre"] = mitre
+        return await self._get("/rules", params=params)
+
+    # ---- Active Response ----------------------------------------------
+
+    async def run_active_response(
+        self,
+        agent_id: str,
+        command: str,
+        *,
+        arguments: Optional[List[str]] = None,
+        custom: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Trigger an active-response command on an agent.
+
+        .. danger::
+           This is a destructive API. Always validate the command and
+           target before calling.
+        """
+        body: Dict[str, Any] = {
+            "agent_id": agent_id,
+            "command": command,
+            "custom": custom,
+        }
+        if arguments:
+            body["arguments"] = arguments
+
+        return await self._put("/active-response", json=body)
