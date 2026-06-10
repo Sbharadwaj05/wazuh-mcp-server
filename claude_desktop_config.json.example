@@ -6,9 +6,12 @@
       "cwd": "/path/to/Wazuh-MCP/src",
       "env": {
         "WAZUH_API_URL": "https://your-wazuh-manager:55000",
-        "WAZUH_USERNAME": "admin",
-        "WAZUH_PASSWORD": "your-password-here",
-        "WAZUH_INSECURE": "false"
+        "WAZUH_USERNAME": "wazuh-wui",
+        "WAZUH_PASSWORD": "your-api-password",
+        "WAZUH_INSECURE": "false",
+        "WAZUH_INDEXER_URL": "https://your-wazuh-manager:9200",
+        "WAZUH_INDEXER_USER": "admin",
+        "WAZUH_INDEXER_PASS": "your-indexer-password"
       }
     }
   }
