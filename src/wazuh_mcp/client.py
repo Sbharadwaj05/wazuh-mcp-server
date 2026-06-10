@@ -526,8 +526,11 @@ class WazuhClient:
     # ---- Per-Node Cluster Stats ---------------------------------------
 
     async def cluster_node_stats(self, node_id: str) -> Dict[str, Any]:
-        """Get detailed statistics for a specific cluster node."""
-        return await self._get(f"/cluster/{node_id}/stats")
+        """Get node stats — falls back to manager stats for single-node."""
+        try:
+            return await self._get(f"/cluster/{node_id}/stats")
+        except WazuhAPIError:
+            return await self.manager_stats()
 
     async def cluster_node_info(self, node_id: str) -> Dict[str, Any]:
         """Get configuration info for a specific cluster node."""
