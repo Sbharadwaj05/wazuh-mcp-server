@@ -209,17 +209,34 @@ class WazuhClient:
         offset: int = 0,
         filters: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Search raw events in the indexer."""
-        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        """Search raw events in the indexer (POST required in Wazuh 4.x)."""
+        body: Dict[str, Any] = {}
         if search:
-            params["search"] = search
+            body["search"] = search
         if select:
-            params["select"] = select
+            body["select"] = select
         if sort:
-            params["sort"] = sort
+            body["sort"] = sort
+        if limit:
+            body["limit"] = limit
+        if offset:
+            body["offset"] = offset
         if filters:
-            params["q"] = ";".join(f"{k}={v}" for k, v in filters.items())
-        return await self._get("/events", params=params)
+            body["filters"] = filters
+        # Try POST first (4.x), fall back to GET with params
+        try:
+            return await self._request("POST", "/events", json=body or None)
+        except WazuhAPIError:
+            params: Dict[str, Any] = {"limit": limit, "offset": offset}
+            if search:
+                params["search"] = search
+            if select:
+                params["select"] = select
+            if sort:
+                params["sort"] = sort
+            if filters:
+                params["q"] = ";".join(f"{k}={v}" for k, v in filters.items())
+            return await self._get("/events", params=params)
 
     # ---- Agents -------------------------------------------------------
 
@@ -249,8 +266,8 @@ class WazuhClient:
         return await self._get("/agents", params=params)
 
     async def get_agent(self, agent_id: str) -> Dict[str, Any]:
-        """Get full details for a single agent."""
-        data = await self._get(f"/agents/{agent_id}")
+        """Get full details for a single agent (via query filter)."""
+        data = await self._get("/agents", params={"agents_list": agent_id, "limit": 1})
         items = data.get("affected_items", []) if isinstance(data, dict) else data
         if not items:
             raise WazuhAPIError(404, f"Agent {agent_id} not found")
@@ -447,19 +464,19 @@ class WazuhClient:
         limit: int = 50,
         offset: int = 0,
     ) -> Dict[str, Any]:
-        """List agent groups."""
+        """List agent groups. Wazuh 4.x uses /groups not /agents/groups."""
         params: Dict[str, Any] = {"limit": limit, "offset": offset}
         if search:
             params["search"] = search
-        return await self._get("/agents/groups", params=params)
+        return await self._get("/groups", params=params)
 
     async def get_group(self, group_id: str) -> Dict[str, Any]:
         """Get agents belonging to a specific group."""
-        data = await self._get(f"/agents/groups/{group_id}")
+        data = await self._get("/groups", params={"search": group_id, "limit": 1})
         items = data.get("affected_items", []) if isinstance(data, dict) else data
         if not items:
             raise WazuhAPIError(404, f"Group {group_id} not found")
-        return data
+        return items[0]
 
     async def group_agents(
         self,
@@ -469,8 +486,12 @@ class WazuhClient:
         offset: int = 0,
     ) -> Dict[str, Any]:
         """List agents in a specific group."""
-        params: Dict[str, Any] = {"limit": limit, "offset": offset}
-        return await self._get(f"/agents/groups/{group_id}/agents", params=params)
+        params: Dict[str, Any] = {
+            "limit": limit,
+            "offset": offset,
+            "q": f"group={group_id}",
+        }
+        return await self._get("/agents", params=params)
 
     # ---- Per-Node Cluster Stats ---------------------------------------
 
