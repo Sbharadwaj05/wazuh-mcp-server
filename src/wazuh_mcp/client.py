@@ -15,6 +15,8 @@ from typing import Any, Dict, List, Optional
 import httpx
 from dotenv import load_dotenv
 
+from wazuh_mcp.indexer import IndexerClient
+
 load_dotenv()
 
 logger = logging.getLogger("wazuh-mcp.client")
@@ -68,6 +70,19 @@ class WazuhClient:
         )
         self._token: Optional[str] = None
         self._token_expiry: float = 0.0
+
+        # Indexer client for alert/vulnerability queries
+        idx_url = os.getenv(
+            "WAZUH_INDEXER_URL", self.base_url.replace(":55000", ":9200")
+        )
+        idx_user = os.getenv("WAZUH_INDEXER_USER", "admin")
+        idx_pass = os.getenv("WAZUH_INDEXER_PASS", "admin")
+        self._indexer = IndexerClient(
+            base_url=idx_url,
+            username=idx_user,
+            password=idx_pass,
+            insecure=insecure,
+        )
 
     # ------------------------------------------------------------------
     # Authentication
@@ -162,7 +177,7 @@ class WazuhClient:
         limit: int = 50,
         offset: int = 0,
     ) -> Dict[str, Any]:
-        """Query alerts from the Wazuh indexer."""
+        """Query alerts — tries REST API first, falls back to indexer."""
         params: Dict[str, Any] = {"limit": limit, "offset": offset}
         if agent_id:
             params["agent_id"] = agent_id
@@ -174,7 +189,6 @@ class WazuhClient:
             params["select"] = select
         if sort:
             params["sort"] = sort
-
         filters = []
         if min_level is not None:
             filters.append(f"rule.level>={min_level}")
@@ -186,8 +200,18 @@ class WazuhClient:
             filters.append(f"rule.mitre.id={mitre_id}")
         if filters:
             params["q"] = ";".join(filters)
-
-        return await self._get("/alerts", params=params)
+        try:
+            return await self._get("/alerts", params=params)
+        except WazuhAPIError:
+            return await self._indexer.list_alerts(
+                min_level=min_level,
+                agent_id=agent_id,
+                rule_id=rule_id,
+                search=search,
+                mitre_id=mitre_id,
+                limit=limit,
+                offset=offset,
+            )
 
     async def get_alert(self, alert_id: str) -> Dict[str, Any]:
         """Fetch a single alert by ID."""
@@ -316,7 +340,7 @@ class WazuhClient:
         limit: int = 100,
         offset: int = 0,
     ) -> Dict[str, Any]:
-        """Query vulnerability-detector findings."""
+        """Query vulnerabilities — tries API first, falls back to indexer."""
         params: Dict[str, Any] = {"limit": limit, "offset": offset}
         if cve:
             params["cve"] = cve
@@ -324,7 +348,15 @@ class WazuhClient:
             params["severity"] = severity
         if search:
             params["search"] = search
-        return await self._get(f"/vulnerability/{agent_id}", params=params)
+        try:
+            return await self._get(f"/vulnerability/{agent_id}", params=params)
+        except WazuhAPIError:
+            return await self._indexer.vulnerabilities(
+                severity=severity,
+                cve=cve,
+                limit=limit,
+                offset=offset,
+            )
 
     # ---- MITRE ATT&CK -------------------------------------------------
 
