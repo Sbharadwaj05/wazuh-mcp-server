@@ -74,10 +74,15 @@ class WazuhClient:
     # ------------------------------------------------------------------
 
     async def login(self) -> None:
-        """Authenticate and cache a JWT token."""
+        """Authenticate and cache a JWT token using HTTP Basic Auth."""
+        import base64
+
+        # Wazuh API accepts Basic auth on the /authenticate endpoint
+        credentials = f"{self.username}:{self.password}"
+        encoded = base64.b64encode(credentials.encode()).decode()
         resp = await self._client.post(
             "/security/user/authenticate",
-            json={"user_id": self.username, "password": self.password},
+            headers={"Authorization": f"Basic {encoded}"},
         )
         data = self._unwrap(resp)
         self._token = data["token"]
