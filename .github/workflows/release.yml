@@ -10,14 +10,14 @@ permissions:
 
 jobs:
   build-and-publish:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
@@ -28,12 +28,12 @@ jobs:
         run: python -m build
 
       - name: Generate provenance
-        uses: actions/attest-build-provenance@bd6dbc2c098867bc2e9c5345cf1539d9c1826558 # v2.2.0
+        uses: actions/attest-build-provenance@v2
         with:
           subject-path: dist/*
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@c95b2e92a0a1bc50e48900bcfe7504040e2b7bc8 # v2.2.1
+        uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: dist/*
@@ -41,6 +41,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@67350ad746361927b1cade0b36a749e77f690444 # v1.12.3
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
