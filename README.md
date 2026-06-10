@@ -1,6 +1,15 @@
 # 🔐 Wazuh MCP Server
 
-**AI-powered security operations for Wazuh SIEM/XDR — through natural language.**
+**28 MCP tools. 9 domains. AI-powered security operations for Wazuh SIEM/XDR.**
+
+<p align="center">
+  <a href="https://github.com/Sbharadwaj05/wazuh-mcp-server/actions/workflows/ci.yml"><img src="https://github.com/Sbharadwaj05/wazuh-mcp-server/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Sbharadwaj05/wazuh-mcp-server/actions/workflows/security-scan.yml"><img src="https://github.com/Sbharadwaj05/wazuh-mcp-server/actions/workflows/security-scan.yml/badge.svg" alt="Security Scan"></a>
+  <a href="https://github.com/Sbharadwaj05/wazuh-mcp-server/actions/workflows/codeql.yml"><img src="https://github.com/Sbharadwaj05/wazuh-mcp-server/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+  <a href="https://pypi.org/project/wazuh-mcp-server/"><img src="https://img.shields.io/pypi/v/wazuh-mcp-server" alt="PyPI"></a>
+  <a href="https://github.com/Sbharadwaj05/wazuh-mcp-server/blob/master/LICENSE"><img src="https://img.shields.io/github/license/Sbharadwaj05/wazuh-mcp-server" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue" alt="Python">
+</p>
 
 > *"Show me all critical alerts in the last 6 hours, cross-reference with MITRE ATT&CK, and check if any affected hosts have unpatched CVEs."*
 
@@ -12,60 +21,65 @@ One prompt. Your AI assistant queries alerts, hunts threats, checks compliance, 
 
 ---
 
-## What This Does
+## 🛡️ Security Features (Defense in Depth)
 
-Turn your AI assistant (Claude Desktop, Cursor, Copilot) into a security analyst that can:
+- [x] **Input validation** — Shell metacharacter blocking, regex for agent IDs, IPs, CVEs, MITRE IDs
+- [x] **Rate limiting** — Token-bucket: 30/60s for read tools, 5/120s for destructive
+- [x] **Output sanitization** — Redacts AWS keys, JWT tokens, SSH keys, API keys, passwords
+- [x] **Audit logging** — Append-only JSONL trail for all destructive actions
+- [x] **Confirmation gate** — Two-step `confirm=True` + expiring token for active response
+- [x] **RBAC** — 4 built-in roles: `viewer`, `analyst`, `admin`, `soc`
+- [x] **Dependabot + pip-audit + CodeQL** — Automated dependency scanning on every push
+- [x] **Non-root Docker** — Production container runs as unprivileged `wazuhmcp` user
+- [x] **TLS everywhere** — `WAZUH_INSECURE=false` in production
+
+---
+
+## 📊 What This Does
 
 | Workflow | What you say | What happens |
 |----------|-------------|--------------|
 | **Alert Triage** | *"Summarize today's alerts by severity and MITRE technique"* | Queries Wazuh indexer, aggregates by level/rule/technique/IP |
 | **Threat Hunting** | *"Search for IOC 10.0.0.50 across all events and FIM records"* | Searches raw events + file integrity monitoring |
 | **Compliance Audit** | *"Show me all agents failing CIS benchmark checks"* | Pulls SCA results per agent, per policy |
-| **Fleet Health** | *"List disconnected agents and their last seen time"* | Agent summary + detailed per-agent view |
-| **Vulnerability Mgmt** | *"Any critical CVEs on the production group?"* | Vulnerability-detector inventory by severity/CVE |
-| **MITRE Coverage** | *"Which of my rules cover T1059 (Command & Scripting Interpreter)?"* | Searches rules by MITRE technique |
+| **Rules Coverage** | *"What's my NIST 800-53 detection coverage?"* | Cross-references rules against MITRE/NIST/PCI/GDPR/HIPAA |
+| **Vulnerability Mgmt** | *"Which systems have critical unpatched CVEs?"* | Risk-scored vulnerability heatmap across all agents |
+| **Incident Timeline** | *"Reconstruct what happened around alert #45821"* | Auto-generated chronological event timeline |
 | **Incident Response** ⚠️ | *"Block IP 203.0.113.55 on all web servers"* | Triggers active-response (with safety confirmation) |
 
 ---
 
-## Installation
+## 📦 Installation
 
-### Prerequisites
+### pip (PyPI)
 
-- Python 3.10+
-- A Wazuh 4.7+ manager (or use the included Docker stack)
+```bash
+pip install wazuh-mcp-server
+```
 
-### Quick Start (with Docker)
+### From source
+
+```bash
+git clone https://github.com/Sbharadwaj05/wazuh-mcp-server.git
+cd wazuh-mcp-server
+pip install -e ".[dev]"
+```
+
+### Docker (full stack in one command)
 
 ```bash
 git clone https://github.com/Sbharadwaj05/wazuh-mcp-server.git
 cd wazuh-mcp-server
 
-# One command: spins up Wazuh manager + indexer + dashboard
-chmod +x scripts/setup.sh
-./scripts/setup.sh
-
-# Or manually:
+# Spins up Wazuh 4.9 + MCP server + Prometheus metrics
 docker compose up -d
-pip install -e ".[dev]"
+
+# View API docs at http://localhost:8000/docs
+# Prometheus metrics at http://localhost:9090/metrics
+# Wazuh dashboard at https://localhost:443
 ```
 
-### Connect to an Existing Wazuh Instance
-
-```bash
-pip install -e .
-
-# Create your .env
-cp .env.example .env
-# Edit .env with your Wazuh manager URL and credentials
-
-# Test it
-python -m wazuh_mcp.server
-```
-
-### Claude Desktop / Cursor Configuration
-
-Add this to your MCP config (`claude_desktop_config.json` or Cursor's MCP settings):
+### Claude Desktop / Cursor
 
 ```json
 {
@@ -87,98 +101,176 @@ Add this to your MCP config (`claude_desktop_config.json` or Cursor's MCP settin
 
 ---
 
-## Tools Reference
+## 🔧 Tools Reference (28 tools, 9 domains)
 
 ### 🔔 Alerts & Triage
 | Tool | Description |
 |------|-------------|
-| `wazuh_list_alerts` | Query alerts by severity, agent, rule ID, MITRE technique, free-text search |
+| `wazuh_list_alerts` | Query alerts by severity, agent, rule ID, MITRE technique, free-text |
 | `wazuh_get_alert` | Fetch full alert detail by ID |
-| `wazuh_alert_summary` | Aggregated view: severity distribution, top rules, top IPs, MITRE coverage |
+| `wazuh_alert_summary` | Aggregated: severity distribution, top rules, top IPs, MITRE coverage |
 
 ### 🔍 Threat Hunting
 | Tool | Description |
 |------|-------------|
-| `wazuh_search_events` | Search raw events for IOCs (IPs, hashes, commands, process names) |
-| `wazuh_query_fim` | File Integrity Monitoring — what files changed, when, by whom |
-| `wazuh_query_vulnerabilities` | CVE inventory per agent, filterable by severity |
-| `wazuh_search_mitre` | Search MITRE ATT&CK techniques and their Wazuh rule mappings |
+| `wazuh_search_events` | Search raw events for IOCs |
+| `wazuh_query_fim` | File Integrity Monitoring records |
+| `wazuh_query_vulnerabilities` | CVE inventory per agent |
+| `wazuh_search_mitre` | Search MITRE ATT&CK techniques |
 
 ### 📋 Compliance
 | Tool | Description |
 |------|-------------|
-| `wazuh_sca_status` | SCA policy compliance scores per agent (CIS, PCI DSS, NIST, GDPR) |
-| `wazuh_sca_checks` | Per-check pass/fail detail, filterable by policy and result |
-| `wazuh_compliance_report` | Fleet-wide compliance report across all agents |
+| `wazuh_sca_status` | SCA policy compliance scores |
+| `wazuh_sca_checks` | Per-check pass/fail detail |
+| `wazuh_compliance_report` | Fleet-wide compliance report |
 
-### 🖥️ Agents & Fleet
+### 🖥️ Agents & Groups
 | Tool | Description |
 |------|-------------|
-| `wazuh_list_agents` | List agents with status, OS, version, search, pagination |
-| `wazuh_get_agent` | Deep-dive on a single agent: config, modules, groups |
-| `wazuh_agent_health` | Fleet health overview: status counts, OS breakdown, stale agents |
+| `wazuh_list_agents` | List agents with filters |
+| `wazuh_get_agent` | Deep-dive on a single agent |
+| `wazuh_agent_health` | Fleet health overview |
+| `wazuh_list_groups` | List agent groups |
+| `wazuh_get_group` | Group details and agents |
+| `wazuh_group_agents` | Agents in a specific group |
 
-### ⚙️ Manager & Rules
+### 📚 CDB Lists
+| Tool | Description |
+|------|-------------|
+| `wazuh_list_cdb_lists` | List CDB threat-intel lists |
+| `wazuh_get_cdb_list` | Read CDB list contents |
+
+### ⚙️ Manager & Cluster
 | Tool | Description |
 |------|-------------|
 | `wazuh_manager_stats` | EPS, queue sizes, daemon health |
-| `wazuh_cluster_status` | Cluster node list and sync status |
-| `wazuh_rules_info` | Search rules by level, compliance framework (PCI, GDPR, HIPAA, NIST), MITRE |
+| `wazuh_manager_logs` | Manager log retrieval |
+| `wazuh_cluster_status` | Cluster node list and sync |
+| `wazuh_cluster_node_stats` | Per-node statistics |
+| `wazuh_rules_info` | Search rules by framework/MITRE |
+
+### 📊 Security Analysis
+| Tool | Description |
+|------|-------------|
+| `wazuh_rules_coverage_map` | MITRE/NIST/PCI/GDPR/HIPAA coverage matrix |
+| `wazuh_vulnerability_heatmap` | Risk-scored CVE heatmap |
+| `wazuh_incident_timeline` | Auto-generated attack timeline |
 
 ### ⚠️ Incident Response
 | Tool | Description |
 |------|-------------|
-| `wazuh_run_active_response` | Trigger active response (firewall-drop, host-deny, restart-wazuh) |
-| `wazuh_agent_command` | Execute arbitrary command on a remote agent |
+| `wazuh_run_active_response` | Trigger firewall-drop, host-deny, restart |
+| `wazuh_agent_command` | Execute command on remote agent |
 
-> **🔒 SAFETY**: `wazuh_run_active_response` and `wazuh_agent_command` require explicit confirmation before execution. By default they return a "here's what would happen — are you sure?" prompt with a one-time confirmation token. A misconfigured LLM cannot silently block IPs or quarantine hosts.
+> **🔒 SAFETY**: Destructive tools require two-step `confirm=True` + expiring token. A misconfigured LLM cannot silently block IPs or quarantine hosts.
 
 ---
 
-## Project Structure
+## 🖥️ Observability
+
+### Prometheus Metrics (`:9090/metrics`)
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `wazuh_mcp_tool_calls_total` | Counter | Tool invocations by name + status |
+| `wazuh_mcp_tool_duration_seconds` | Histogram | P50/P95/P99 latency per tool |
+| `wazuh_mcp_rate_limits_total` | Counter | Rate-limit rejections per tool |
+| `wazuh_mcp_api_up` | Gauge | Wazuh API connectivity (1=up) |
+| `wazuh_mcp_audit_entries_total` | Counter | Audit log entries written |
+| `wazuh_mcp_active_requests` | Gauge | In-flight tool calls |
+| `wazuh_mcp_tool_errors_total` | Counter | Errors by tool + error type |
+
+### OpenAPI / Swagger (`:8000/docs`)
+
+Interactive API documentation at `/docs` with full schema for all 28 tools.
+Raw OpenAPI 3.0 spec at `/openapi.json`.
+
+### Audit Log (`~/.wazuh-mcp/audit.jsonl`)
+
+Append-only JSON Lines format. One entry per destructive action. Never truncated.
+
+---
+
+## 🔐 RBAC
+
+Four built-in roles with hierarchical access:
+
+| Role | Access Level | Tools |
+|------|-------------|-------|
+| `viewer` | Read-only | Alerts, agents, compliance, rules |
+| `analyst` | + Investigation | Hunting, MITRE, CDB lists, analysis |
+| `admin` | + Administration | Manager stats, logs, cluster management |
+| `soc` | + Response ⚠️ | Active response, agent commands |
+
+```bash
+# Restrict to analyst role
+export WAZUH_RBAC_ROLE=analyst
+
+# Or use custom policy file
+export WAZUH_RBAC_POLICY=/etc/wazuh-mcp/rbac.json
+```
+
+---
+
+## 📁 Project Structure
 
 ```
 Wazuh-MCP/
 ├── src/wazuh_mcp/
-│   ├── server.py           # Entry point — FastMCP instance + tool registration
-│   ├── client.py           # Async Wazuh REST API client (JWT auth, pagination)
+│   ├── server.py           # FastMCP entry point (stdio + SSE)
+│   ├── client.py           # Async Wazuh REST API (JWT, pagination)
+│   ├── rbac.py             # Role-Based Access Control (4 roles)
+│   ├── audit.py            # Immutable audit logging (JSONL)
+│   ├── sanitizer.py        # Output sanitization (credential redaction)
+│   ├── rate_limiter.py     # Token-bucket per-tool rate limiting
+│   ├── validators.py       # Input validation (regex, shell meta)
+│   ├── metrics.py          # Prometheus metrics exporter
+│   ├── openapi.py          # OpenAPI 3.0 + Swagger UI generator
+│   ├── output.py           # Token-efficient field selection
 │   ├── utils.py            # JSON formatters, pagination helpers
-│   └── tools/
-│       ├── alerts.py       # wazuh_list_alerts, wazuh_get_alert, wazuh_alert_summary
-│       ├── hunting.py      # wazuh_search_events, wazuh_query_fim, vulnerabilities, MITRE
-│       ├── compliance.py   # wazuh_sca_status, wazuh_sca_checks, wazuh_compliance_report
-│       ├── agents.py       # wazuh_list_agents, wazuh_get_agent, wazuh_agent_health
-│       ├── manager.py      # wazuh_manager_stats, wazuh_cluster_status, wazuh_rules_info
-│       └── response.py     # wazuh_run_active_response, wazuh_agent_command (with safety)
-├── tests/                  # pytest-asyncio tests for each tool domain
-├── scripts/setup.sh        # One-command Wazuh + MCP dev environment
-├── docker-compose.yml      # Wazuh 4.9 single-node stack
-├── pyproject.toml
-└── .env.example
+│   └── tools/              # 9 tool modules, 28 tools
+├── tests/                  # pytest-asyncio test suite
+├── docs/                   # SECURITY, DEVELOPMENT, ADVANCED_FEATURES, TROUBLESHOOTING
+├── scripts/setup.sh        # One-command dev environment
+├── docker-compose.yml      # Wazuh 4.9 + MCP server + Prometheus
+├── Dockerfile              # Multi-stage production build
+├── openapi.json            # Generated OpenAPI 3.0 specification
+├── .github/workflows/      # CI (test matrix), Release, Security Scan
+├── CHANGELOG.md
+└── README.md
 ```
 
 ---
 
-## Security Considerations
+## 🚀 Quick Start
 
-1. **TLS**: Always use `WAZUH_INSECURE=false` in production. The Docker dev stack uses self-signed certs with `WAZUH_INSECURE=true` for local testing only.
-2. **Credentials**: Store Wazuh credentials in `.env` (gitignored). Never commit them.
-3. **Confirmation Gate**: Destruction tools (`wazuh_run_active_response`, `wazuh_agent_command`) require a two-step confirmation flow with expiring tokens. Review the [response.py](src/wazuh_mcp/tools/response.py) implementation for details.
-4. **Least Privilege**: Create a dedicated Wazuh API user with only the permissions your AI workflows need. Avoid using the default `admin` account in production.
+```bash
+# 1. Clone and start everything
+git clone https://github.com/Sbharadwaj05/wazuh-mcp-server.git
+cd wazuh-mcp-server
+docker compose up -d
+
+# 2. Wait ~2 minutes for Wazuh to initialize
+
+# 3. Explore
+#    - Swagger UI:    http://localhost:8000/docs
+#    - Prometheus:    http://localhost:9090/metrics
+#    - Wazuh Dashboard: https://localhost:443  (admin / SecretPassword)
+#    - MCP Server:    http://localhost:8000/sse
+#    - OpenAPI JSON:  http://localhost:8000/openapi.json
+
+# 4. Connect Claude Desktop using claude_desktop_config.json.example
+```
 
 ---
 
-## Roadmap
+## 🔒 Security Policy
 
-- [ ] Streaming alert feed (SSE transport for real-time SOC workflows)
-- [ ] Graph-based attack path visualization via MCP resources
-- [ ] Integration with OT Sentinel ruleset for ICS/SCADA detection
-- [ ] Natural language → Wazuh rule generator
-- [ ] Automated post-incident timeline reconstruction
-- [ ] Multi-manager / multi-cluster support
+See [SECURITY.md](docs/SECURITY.md) for full defense-in-depth documentation and production deployment checklist.
 
 ---
 
-## License
+## 📄 License
 
 MIT © [Sbharadwaj05](https://github.com/Sbharadwaj05)

@@ -2,11 +2,14 @@
 Entry point for the Wazuh MCP server — production-hardened.
 
 Features:
-- 24 tools across 9 domains (alerts, hunting, compliance, agents,
+- 28 tools across 9 domains (alerts, hunting, compliance, agents,
   groups, lists, manager, response, analysis)
+- RBAC (4 built-in roles: viewer, analyst, admin, soc)
 - Rate limiting per-tool (token bucket, configurable)
 - API response sanitization (credential redaction)
 - Immutable audit logging for destructive actions
+- Prometheus /metrics endpoint for SOC monitoring
+- OpenAPI 3.0 / Swagger UI at /docs
 - Smart field selection for token-efficient LLM output
 - SSE transport support for streaming alerts
 - Multi-manager support (round-robin client pool)
@@ -125,11 +128,21 @@ def main_sse() -> None:
     Run the MCP server with SSE transport for streaming alert support.
 
     Exposes:
-      - http://127.0.0.1:8000/sse       — SSE endpoint
-      - http://127.0.0.1:8000/messages  — message endpoint
-      - http://127.0.0.1:8000/health    — health check (auto)
+      - http://127.0.0.1:8000/sse           — SSE endpoint
+      - http://127.0.0.1:8000/messages      — message endpoint
+      - http://127.0.0.1:8000/health        — health check (auto)
+      - http://127.0.0.1:9090/metrics       — Prometheus metrics
+      - http://127.0.0.1:8000/docs          — Swagger UI
+      - http://127.0.0.1:8000/openapi.json   — OpenAPI spec
     """
     logger.info("Starting Wazuh MCP Server v0.2.0 (SSE transport)")
+
+    # Start Prometheus metrics on a background thread
+    from wazuh_mcp.metrics import start_metrics_server
+
+    metrics_port = int(os.getenv("WAZUH_METRICS_PORT", "9090"))
+    start_metrics_server(port=metrics_port)
+
     mcp.run(
         transport="sse",
         host=os.getenv("WAZUH_MCP_HOST", "127.0.0.1"),

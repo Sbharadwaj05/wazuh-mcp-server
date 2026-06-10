@@ -1,0 +1,1237 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Wazuh MCP Server API",
+    "version": "0.2.0",
+    "description": "AI-powered security operations for Wazuh SIEM/XDR. 28 MCP tools across 9 domains: alerts, hunting, compliance, agents, groups, lists, manager, response, and analysis.",
+    "contact": {
+      "name": "Subhash Bharadwaj",
+      "url": "https://github.com/Sbharadwaj05/wazuh-mcp-server"
+    },
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "MCP Server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Alerts",
+      "description": "Alert triage and investigation"
+    },
+    {
+      "name": "Hunting",
+      "description": "Threat hunting and IOC search"
+    },
+    {
+      "name": "Compliance",
+      "description": "SCA compliance assessment"
+    },
+    {
+      "name": "Agents",
+      "description": "Agent and fleet management"
+    },
+    {
+      "name": "Groups",
+      "description": "Agent group management"
+    },
+    {
+      "name": "Manager",
+      "description": "Manager, cluster, and rules"
+    },
+    {
+      "name": "Analysis",
+      "description": "Advanced security analysis"
+    },
+    {
+      "name": "System",
+      "description": "Health and metrics"
+    }
+  ],
+  "paths": {
+    "/tools/wazuh_list_alerts": {
+      "post": {
+        "operationId": "wazuh_list_alerts",
+        "summary": "Query Wazuh security alerts",
+        "description": "Query alerts by severity, agent, rule ID, MITRE technique, and free-text search. Returns paginated results with summary statistics.",
+        "tags": [
+          "Alerts"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent_id": {
+                    "type": "string",
+                    "description": "Filter to specific agent ID (e.g., '001')"
+                  },
+                  "min_level": {
+                    "type": "integer",
+                    "description": "Minimum rule level (3-15). 12+ for critical only."
+                  },
+                  "rule_id": {
+                    "type": "string",
+                    "description": "Filter by Wazuh rule ID (e.g., '5710')"
+                  },
+                  "mitre_id": {
+                    "type": "string",
+                    "description": "Filter by MITRE ATT&CK technique (e.g., 'T1110')"
+                  },
+                  "search": {
+                    "type": "string",
+                    "description": "Free-text search across alert fields"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "description": "Maximum alerts to return (1-500)",
+                    "default": 50
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "description": "Pagination offset",
+                    "default": 0
+                  },
+                  "mode": {
+                    "type": "string",
+                    "description": "Output mode for token efficiency",
+                    "enum": [
+                      "triage",
+                      "detail"
+                    ]
+                  },
+                  "compact_output": {
+                    "type": "boolean",
+                    "description": "Enable token-efficient compact output",
+                    "default": false
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_get_alert": {
+      "post": {
+        "operationId": "wazuh_get_alert",
+        "summary": "Get a single alert by ID",
+        "description": "Fetch full contextual detail for a specific alert.",
+        "tags": [
+          "Alerts"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "alert_id": {
+                    "type": "string",
+                    "description": "Alert ID to retrieve"
+                  }
+                },
+                "required": [
+                  "alert_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_alert_summary": {
+      "post": {
+        "operationId": "wazuh_alert_summary",
+        "summary": "Summarize recent alerts",
+        "description": "Aggregate view: severity distribution, top rules, MITRE coverage, top source IPs.",
+        "tags": [
+          "Alerts"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "hours_back": {
+                    "type": "integer",
+                    "description": "Hours to look back",
+                    "default": 24
+                  },
+                  "min_level": {
+                    "type": "integer",
+                    "description": "Minimum alert level",
+                    "default": 7
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_search_events": {
+      "post": {
+        "operationId": "wazuh_search_events",
+        "summary": "Search raw security events",
+        "description": "Hunt for IOCs like IPs, file hashes, commands across all agents.",
+        "tags": [
+          "Hunting"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "search": {
+                    "type": "string",
+                    "description": "Search term (IP, hash, command)"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "default": 50
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "default": 0
+                  }
+                },
+                "required": [
+                  "search"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_query_fim": {
+      "post": {
+        "operationId": "wazuh_query_fim",
+        "summary": "Query File Integrity Monitoring records",
+        "description": "",
+        "tags": [
+          "Hunting"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent_id": {
+                    "type": "string"
+                  },
+                  "file_path": {
+                    "type": "string",
+                    "description": "Filter by file path"
+                  },
+                  "event_type": {
+                    "type": "string",
+                    "enum": [
+                      "added",
+                      "modified",
+                      "deleted"
+                    ]
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "default": 100
+                  }
+                },
+                "required": [
+                  "agent_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_query_vulnerabilities": {
+      "post": {
+        "operationId": "wazuh_query_vulnerabilities",
+        "summary": "Query vulnerability-detector findings",
+        "description": "",
+        "tags": [
+          "Hunting"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent_id": {
+                    "type": "string"
+                  },
+                  "cve": {
+                    "type": "string",
+                    "description": "Specific CVE ID"
+                  },
+                  "severity": {
+                    "type": "string",
+                    "enum": [
+                      "Critical",
+                      "High",
+                      "Medium",
+                      "Low"
+                    ]
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "default": 100
+                  }
+                },
+                "required": [
+                  "agent_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_search_mitre": {
+      "post": {
+        "operationId": "wazuh_search_mitre",
+        "summary": "Search MITRE ATT&CK framework",
+        "description": "",
+        "tags": [
+          "Hunting"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "search": {
+                    "type": "string",
+                    "description": "Search techniques by name or keyword"
+                  },
+                  "technique_id": {
+                    "type": "string",
+                    "description": "Exact technique ID (e.g., 'T1547.001')"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_sca_status": {
+      "post": {
+        "operationId": "wazuh_sca_status",
+        "summary": "Get SCA compliance status for an agent",
+        "description": "",
+        "tags": [
+          "Compliance"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent_id": {
+                    "type": "string",
+                    "default": "000"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_sca_checks": {
+      "post": {
+        "operationId": "wazuh_sca_checks",
+        "summary": "Get detailed SCA check results",
+        "description": "",
+        "tags": [
+          "Compliance"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent_id": {
+                    "type": "string"
+                  },
+                  "policy_id": {
+                    "type": "string"
+                  },
+                  "result": {
+                    "type": "string",
+                    "enum": [
+                      "passed",
+                      "failed"
+                    ]
+                  }
+                },
+                "required": [
+                  "agent_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_compliance_report": {
+      "post": {
+        "operationId": "wazuh_compliance_report",
+        "summary": "Generate fleet-wide compliance report",
+        "description": "",
+        "tags": [
+          "Compliance"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent_ids": {
+                    "type": "string",
+                    "description": "Comma-separated agent IDs"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_list_agents": {
+      "post": {
+        "operationId": "wazuh_list_agents",
+        "summary": "List all Wazuh agents",
+        "description": "",
+        "tags": [
+          "Agents"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "disconnected",
+                      "never_connected",
+                      "pending"
+                    ]
+                  },
+                  "search": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "default": 50
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_get_agent": {
+      "post": {
+        "operationId": "wazuh_get_agent",
+        "summary": "Get detailed agent information",
+        "description": "",
+        "tags": [
+          "Agents"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "agent_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_agent_health": {
+      "post": {
+        "operationId": "wazuh_agent_health",
+        "summary": "Fleet-wide health overview",
+        "description": "",
+        "tags": [
+          "Agents"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "stale_threshold_hours": {
+                    "type": "integer",
+                    "default": 24
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_list_groups": {
+      "post": {
+        "operationId": "wazuh_list_groups",
+        "summary": "List agent groups",
+        "description": "",
+        "tags": [
+          "Groups"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_get_group": {
+      "post": {
+        "operationId": "wazuh_get_group",
+        "summary": "Get group details",
+        "description": "",
+        "tags": [
+          "Groups"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "group_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "group_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_manager_stats": {
+      "post": {
+        "operationId": "wazuh_manager_stats",
+        "summary": "Manager daemon statistics",
+        "description": "",
+        "tags": [
+          "Manager"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "daemon": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_manager_logs": {
+      "post": {
+        "operationId": "wazuh_manager_logs",
+        "summary": "Retrieve manager logs",
+        "description": "",
+        "tags": [
+          "Manager"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "all",
+                      "ossec",
+                      "api"
+                    ]
+                  },
+                  "search": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_cluster_status": {
+      "post": {
+        "operationId": "wazuh_cluster_status",
+        "summary": "Cluster health status",
+        "description": "",
+        "tags": [
+          "Manager"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_rules_info": {
+      "post": {
+        "operationId": "wazuh_rules_info",
+        "summary": "Search and list detection rules",
+        "description": "",
+        "tags": [
+          "Rules"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "search": {
+                    "type": "string"
+                  },
+                  "level": {
+                    "type": "integer"
+                  },
+                  "pci": {
+                    "type": "string"
+                  },
+                  "gdpr": {
+                    "type": "string"
+                  },
+                  "hipaa": {
+                    "type": "string"
+                  },
+                  "nist_800_53": {
+                    "type": "string"
+                  },
+                  "mitre_technique": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_rules_coverage_map": {
+      "post": {
+        "operationId": "wazuh_rules_coverage_map",
+        "summary": "Generate compliance coverage matrix",
+        "description": "Cross-reference rules against MITRE, NIST, PCI DSS, GDPR, HIPAA.",
+        "tags": [
+          "Analysis"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "framework": {
+                    "type": "string"
+                  },
+                  "min_level": {
+                    "type": "integer",
+                    "default": 5
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_vulnerability_heatmap": {
+      "post": {
+        "operationId": "wazuh_vulnerability_heatmap",
+        "summary": "CVE severity heatmap across agents",
+        "description": "",
+        "tags": [
+          "Analysis"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "severity": {
+                    "type": "string",
+                    "enum": [
+                      "Critical",
+                      "High",
+                      "Medium",
+                      "Low"
+                    ]
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/tools/wazuh_incident_timeline": {
+      "post": {
+        "operationId": "wazuh_incident_timeline",
+        "summary": "Reconstruct attack timeline from an alert",
+        "description": "",
+        "tags": [
+          "Analysis"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "alert_id": {
+                    "type": "string"
+                  },
+                  "lookback_hours": {
+                    "type": "integer",
+                    "default": 24
+                  }
+                },
+                "required": [
+                  "alert_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_check",
+        "summary": "Server health check",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "prometheus_metrics",
+        "summary": "Prometheus metrics endpoint",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "Prometheus text format"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Wazuh API JWT token"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ]
+}
