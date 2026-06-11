@@ -39,6 +39,9 @@ class WazuhClient:
 
     Authenticates once and transparently refreshes the JWT on expiry.
     All public methods return the ``data`` field from the Wazuh JSON envelope.
+
+    Supports multi-manager failover: pass ``fallback_clients`` for automatic
+    retry on connection/timeout errors.
     """
 
     def __init__(
@@ -48,11 +51,13 @@ class WazuhClient:
         password: str = DEFAULT_PASSWORD,
         insecure: bool = DEFAULT_INSECURE,
         timeout: int = DEFAULT_TIMEOUT,
+        fallback_clients: Optional[List["WazuhClient"]] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
         self.timeout = timeout
+        self._fallback_clients = fallback_clients or []
 
         # TLS client certificate support (mTLS)
         _cert_path = os.getenv("WAZUH_CLIENT_CERT", "")
@@ -194,11 +199,30 @@ class WazuhClient:
         json: Optional[Dict[str, Any]] = None,
     ) -> Any:
         await self._ensure_auth()
-        headers = {"Authorization": f"Bearer {self._token}"}
-        resp = await self._client.request(
-            method, path, params=params, json=json, headers=headers
-        )
-        return self._unwrap(resp)
+
+        # Try primary client, then fallback clients on connection errors
+        clients = [(self, self._token)] + [(fb, None) for fb in self._fallback_clients]
+        last_error = None
+
+        for client, token in clients:
+            if token is None:
+                # Fallback client — authenticate with its own base URL
+                await client._ensure_auth()
+                token = client._token
+
+            headers = {"Authorization": f"Bearer {token}"}
+            try:
+                resp = await client._client.request(
+                    method, path, params=params, json=json, headers=headers
+                )
+                return self._unwrap(resp)
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                last_error = exc
+                if client is not self:
+                    logger.warning("Retrying on fallback manager: %s", client.base_url)
+                continue
+
+        raise last_error  # type: ignore[misc]
 
     @staticmethod
     def _unwrap(resp: httpx.Response) -> Any:

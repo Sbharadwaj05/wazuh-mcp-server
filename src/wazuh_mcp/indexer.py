@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -33,6 +34,15 @@ DEFAULT_INDEXER_PASS = os.getenv(
     "WAZUH_INDEXER_PASS", os.getenv("WAZUH_PASSWORD", "admin")
 )
 DEFAULT_INSECURE = os.getenv("WAZUH_INSECURE", "false").lower() == "true"
+
+# Lucene special characters that must be escaped in query_string queries.
+# See: https://lucene.apache.org/core/2_9_4/queryparsersyntax.html#Escaping
+_LUCENE_SPECIAL = re.compile(r"([+\-!(){}\[\]^\"~*?:\\/]|&&|\|\|)")
+
+
+def escape_lucene(value: str) -> str:
+    """Escape Lucene query_string special characters to prevent injection."""
+    return _LUCENE_SPECIAL.sub(r"\\\1", value)
 
 
 class IndexerClient:
@@ -125,7 +135,7 @@ class IndexerClient:
         if mitre_id:
             must.append({"term": {"rule.mitre.id": mitre_id}})
         if search:
-            must.append({"query_string": {"query": search}})
+            must.append({"query_string": {"query": escape_lucene(search)}})
 
         query: Dict[str, Any] = {"bool": {"must": must}} if must else {"match_all": {}}
 
@@ -201,6 +211,8 @@ class IndexerClient:
     ) -> Dict[str, Any]:
         """Generic search across Wazuh indices."""
         query: Dict[str, Any] = (
-            {"query_string": {"query": search}} if search else {"match_all": {}}
+            {"query_string": {"query": escape_lucene(search)}}
+            if search
+            else {"match_all": {}}
         )
         return await self._search(index, query, size=min(limit, 500), from_=offset)

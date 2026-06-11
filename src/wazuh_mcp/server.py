@@ -77,13 +77,12 @@ _urls_raw = os.getenv(
 )
 _manager_urls = [u.strip() for u in _urls_raw.split(",") if u.strip()]
 
-# Default client (first manager)
-_client = WazuhClient(base_url=_manager_urls[0])
-
-# Additional clients for multi-manager setups
+# Default client (first manager) — with automatic fallback to extras
 _extra_clients: list[WazuhClient] = []
 for url in _manager_urls[1:]:
     _extra_clients.append(WazuhClient(base_url=url))
+
+_client = WazuhClient(base_url=_manager_urls[0], fallback_clients=_extra_clients)
 
 if len(_manager_urls) > 1:
     logger.info("Multi-manager mode: %d managers configured", len(_manager_urls))
