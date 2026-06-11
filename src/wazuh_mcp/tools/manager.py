@@ -4,6 +4,8 @@ Manager & cluster administration tools.
 - wazuh_manager_stats
 - wazuh_cluster_status
 - wazuh_rules_info
+- wazuh_manager_logs
+- wazuh_cluster_node_stats
 """
 
 from __future__ import annotations
@@ -14,7 +16,16 @@ import mcp.types as types
 from mcp.server.fastmcp import FastMCP
 
 from wazuh_mcp.client import WazuhClient
+from wazuh_mcp.output import compact
+from wazuh_mcp.safe_tool import safe_tool
 from wazuh_mcp.utils import extract_items, extract_total, format_json, paginated_result
+from wazuh_mcp.validators import (
+    validate_compliance_id,
+    validate_limit,
+    validate_mitre_technique,
+    validate_offset,
+    validate_soft_text,
+)
 
 
 def register_manager(mcp: FastMCP, client: WazuhClient) -> None:
@@ -28,6 +39,7 @@ def register_manager(mcp: FastMCP, client: WazuhClient) -> None:
             "capacity planning and troubleshooting performance issues."
         ),
     )
+    @safe_tool("wazuh_manager_stats")
     async def wazuh_manager_stats(
         daemon: Optional[str] = types.Field(
             default=None,
@@ -36,12 +48,18 @@ def register_manager(mcp: FastMCP, client: WazuhClient) -> None:
                 "'wmodules', 'authd', 'monitord', 'logcollector'. Leave empty for all."
             ),
         ),
+        compact_output: bool = types.Field(
+            default=False,
+            description="Return token-efficient compact output",
+        ),
     ) -> str:
-        try:
-            data = await client.manager_stats(daemon=daemon)
-            return format_json(data)
-        except Exception as e:
-            return format_json({"error": str(e)})
+        if daemon is not None:
+            validate_soft_text(daemon, param_name="daemon")
+
+        data = await client.manager_stats(daemon=daemon)
+        if compact_output:
+            data = compact(data)
+        return format_json(data)
 
     @mcp.tool(
         name="wazuh_cluster_status",
@@ -51,30 +69,34 @@ def register_manager(mcp: FastMCP, client: WazuhClient) -> None:
             "if the cluster is healthy or diagnosing replication failures."
         ),
     )
+    @safe_tool("wazuh_cluster_status")
     async def wazuh_cluster_status(
         include_nodes: bool = types.Field(
             default=True,
             description="Include detailed per-node information in the response",
         ),
+        compact_output: bool = types.Field(
+            default=False,
+            description="Return token-efficient compact output",
+        ),
     ) -> str:
-        try:
-            if include_nodes:
-                nodes_data = await client.cluster_nodes()
-                try:
-                    status_data = await client.cluster_status()
-                except Exception:
-                    status_data = {}
-            else:
-                nodes_data = {}
+        if include_nodes:
+            nodes_data = await client.cluster_nodes()
+            try:
                 status_data = await client.cluster_status()
+            except Exception:
+                status_data = {}
+        else:
+            nodes_data = {}
+            status_data = await client.cluster_status()
 
-            result = {
-                "cluster_status": status_data,
-                "nodes": nodes_data,
-            }
-            return format_json(result)
-        except Exception as e:
-            return format_json({"error": str(e)})
+        result = {
+            "cluster_status": status_data,
+            "nodes": nodes_data,
+        }
+        if compact_output:
+            result = compact(result)
+        return format_json(result)
 
     @mcp.tool(
         name="wazuh_rules_info",
@@ -85,6 +107,7 @@ def register_manager(mcp: FastMCP, client: WazuhClient) -> None:
             "detection coverage and tuning rules."
         ),
     )
+    @safe_tool("wazuh_rules_info")
     async def wazuh_rules_info(
         search: Optional[str] = types.Field(
             default=None,
@@ -122,35 +145,54 @@ def register_manager(mcp: FastMCP, client: WazuhClient) -> None:
             default=0,
             description="Pagination offset",
         ),
+        compact_output: bool = types.Field(
+            default=False,
+            description="Return token-efficient compact output",
+        ),
     ) -> str:
-        try:
-            data = await client.list_rules(
-                search=search,
-                level=level,
-                pci=pci,
-                gdpr=gdpr,
-                hipaa=hipaa,
-                nist_800_53=nist_800_53,
-                mitre=mitre_technique,
-                limit=min(limit, 500),
-                offset=offset,
-            )
-            items = extract_items(data)
-            total = extract_total(data)
+        # --- input validation ---
+        if search is not None:
+            validate_soft_text(search)
+        if pci is not None:
+            validate_compliance_id(pci, param_name="pci")
+        if gdpr is not None:
+            validate_compliance_id(gdpr, param_name="gdpr")
+        if hipaa is not None:
+            validate_compliance_id(hipaa, param_name="hipaa")
+        if nist_800_53 is not None:
+            validate_compliance_id(nist_800_53, param_name="nist_800_53")
+        if mitre_technique is not None:
+            validate_mitre_technique(mitre_technique)
+        limit = validate_limit(limit, max_limit=500)
+        offset = validate_offset(offset)
 
-            summary = f"Found {total} rule(s)"
-            if search:
-                summary += f" matching '{search}'"
-            if level:
-                summary += f" at level {level}"
-            filters = [f for f in [pci, gdpr, hipaa, nist_800_53, mitre_technique] if f]
-            if filters:
-                summary += f" — compliance: {', '.join(filters)}"
+        data = await client.list_rules(
+            search=search,
+            level=level,
+            pci=pci,
+            gdpr=gdpr,
+            hipaa=hipaa,
+            nist_800_53=nist_800_53,
+            mitre=mitre_technique,
+            limit=limit,
+            offset=offset,
+        )
+        items = extract_items(data)
+        total = extract_total(data)
 
-            result = paginated_result(items, total, offset, limit, summary=summary)
-            return format_json(result)
-        except Exception as e:
-            return format_json({"error": str(e)})
+        summary = f"Found {total} rule(s)"
+        if search:
+            summary += f" matching '{search}'"
+        if level:
+            summary += f" at level {level}"
+        filters = [f for f in [pci, gdpr, hipaa, nist_800_53, mitre_technique] if f]
+        if filters:
+            summary += f" — compliance: {', '.join(filters)}"
+
+        result = paginated_result(items, total, offset, limit, summary=summary)
+        if compact_output:
+            result = compact(result)
+        return format_json(result)
 
     @mcp.tool(
         name="wazuh_manager_logs",
@@ -160,6 +202,7 @@ def register_manager(mcp: FastMCP, client: WazuhClient) -> None:
             "specific errors or warnings, and paginate through results."
         ),
     )
+    @safe_tool("wazuh_manager_logs")
     async def wazuh_manager_logs(
         category: Optional[str] = types.Field(
             default=None,
@@ -177,26 +220,37 @@ def register_manager(mcp: FastMCP, client: WazuhClient) -> None:
             default=0,
             description="Pagination offset",
         ),
+        compact_output: bool = types.Field(
+            default=False,
+            description="Return token-efficient compact output",
+        ),
     ) -> str:
-        try:
-            data = await client.manager_logs(
-                category=category,
-                search=search,
-                sort="-timestamp",
-                limit=min(limit, 200),
-                offset=offset,
-            )
-            items = extract_items(data)
-            total = extract_total(data)
-            summary = "Manager logs"
-            if category:
-                summary += f" (category: {category})"
-            if search:
-                summary += f" matching '{search}'"
-            result = paginated_result(items, total, offset, limit, summary=summary)
-            return format_json(result)
-        except Exception as e:
-            return format_json({"error": str(e)})
+        # --- input validation ---
+        if category is not None:
+            validate_soft_text(category, param_name="category")
+        if search is not None:
+            validate_soft_text(search)
+        limit = validate_limit(limit, max_limit=200)
+        offset = validate_offset(offset)
+
+        data = await client.manager_logs(
+            category=category,
+            search=search,
+            sort="-timestamp",
+            limit=limit,
+            offset=offset,
+        )
+        items = extract_items(data)
+        total = extract_total(data)
+        summary = "Manager logs"
+        if category:
+            summary += f" (category: {category})"
+        if search:
+            summary += f" matching '{search}'"
+        result = paginated_result(items, total, offset, limit, summary=summary)
+        if compact_output:
+            result = compact(result)
+        return format_json(result)
 
     @mcp.tool(
         name="wazuh_cluster_node_stats",
@@ -206,15 +260,21 @@ def register_manager(mcp: FastMCP, client: WazuhClient) -> None:
             "utilization. Essential for diagnosing cluster imbalances."
         ),
     )
+    @safe_tool("wazuh_cluster_node_stats")
     async def wazuh_cluster_node_stats(
         node_id: str = types.Field(
             description="Cluster node ID to inspect (e.g., 'master-node', 'worker-1')",
         ),
+        compact_output: bool = types.Field(
+            default=False,
+            description="Return token-efficient compact output",
+        ),
     ) -> str:
-        try:
-            stats = await client.cluster_node_stats(node_id)
-            info = await client.cluster_node_info(node_id)
-            result = {"node_id": node_id, "configuration": info, "statistics": stats}
-            return format_json(result)
-        except Exception as e:
-            return format_json({"error": str(e)})
+        validate_soft_text(node_id, param_name="node_id")
+
+        stats = await client.cluster_node_stats(node_id)
+        info = await client.cluster_node_info(node_id)
+        result = {"node_id": node_id, "configuration": info, "statistics": stats}
+        if compact_output:
+            result = compact(result)
+        return format_json(result)

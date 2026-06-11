@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from dotenv import load_dotenv
 
+from wazuh_mcp.errors import WazuhAPIError
 from wazuh_mcp.indexer import IndexerClient
 
 load_dotenv()
@@ -30,16 +31,6 @@ DEFAULT_USERNAME = os.getenv("WAZUH_USERNAME", "admin")
 DEFAULT_PASSWORD = os.getenv("WAZUH_PASSWORD", "")
 DEFAULT_INSECURE = os.getenv("WAZUH_INSECURE", "false").lower() == "true"
 DEFAULT_TIMEOUT = int(os.getenv("WAZUH_TIMEOUT", "30"))
-
-
-class WazuhAPIError(Exception):
-    """Wraps a Wazuh API error response."""
-
-    def __init__(self, status_code: int, message: str, details: Any = None):
-        self.status_code = status_code
-        self.message = message
-        self.details = details
-        super().__init__(f"Wazuh API [{status_code}]: {message}")
 
 
 class WazuhClient:
@@ -63,10 +54,19 @@ class WazuhClient:
         self.password = password
         self.timeout = timeout
 
+        # TLS client certificate support (mTLS)
+        _cert_path = os.getenv("WAZUH_CLIENT_CERT", "")
+        _key_path = os.getenv("WAZUH_CLIENT_KEY", "")
+        _cert: Optional[tuple] = None
+        if _cert_path and _key_path:
+            _cert = (_cert_path, _key_path)
+            logger.info("TLS client certificate enabled: %s", _cert_path)
+
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=httpx.Timeout(timeout),
             verify=not insecure,
+            cert=_cert,
         )
         self._token: Optional[str] = None
         self._token_expiry: float = 0.0
@@ -100,14 +100,81 @@ class WazuhClient:
             headers={"Authorization": f"Basic {encoded}"},
         )
         data = self._unwrap(resp)
-        self._token = data["token"]
+        token = data["token"]
+        self._token = token
         self._token_expiry = time.time() + 840  # refresh 60s before 900s expiry
         logger.info("Wazuh API authentication successful")
+
+        # Validate JWT token structure and claims
+        self._validate_jwt(token)
 
     async def _ensure_auth(self) -> None:
         """Re-login if the token is missing or expired."""
         if self._token is None or time.time() >= self._token_expiry:
             await self.login()
+
+    def _validate_jwt(self, token: str) -> None:
+        """
+        Validate JWT token structure and claims.
+
+        Logs a warning (not error) if validation fails, since some Wazuh
+        setups use opaque tokens rather than standard JWTs.
+        """
+        import base64
+        import json as _json
+
+        # Check JWT structure: header.payload.signature
+        parts = token.split(".")
+        if len(parts) != 3:
+            logger.warning(
+                "JWT validation: token has %d dot-separated parts (expected 3). "
+                "This may be an opaque token — authentication will still work.",
+                len(parts),
+            )
+            return
+
+        # Decode payload (second segment)
+        try:
+            payload_b64 = parts[1]
+            # Add padding if needed
+            padding = 4 - len(payload_b64) % 4
+            if padding != 4:
+                payload_b64 += "=" * padding
+            payload_bytes = base64.urlsafe_b64decode(payload_b64)
+            payload = _json.loads(payload_bytes)
+        except Exception as e:
+            logger.warning("JWT validation: failed to decode payload — %s", e)
+            return
+
+        # Validate exp claim
+        exp = payload.get("exp")
+        if exp is not None:
+            if time.time() > exp:
+                logger.warning(
+                    "JWT validation: token 'exp' claim (%s) is in the past. "
+                    "The token may be rejected by the API.",
+                    exp,
+                )
+        else:
+            logger.warning(
+                "JWT validation: token has no 'exp' claim. "
+                "Cannot verify expiration from token payload."
+            )
+
+        # Validate iss claim
+        iss = payload.get("iss")
+        if iss is not None:
+            if iss != self.base_url:
+                logger.warning(
+                    "JWT validation: 'iss' claim (%s) does not match API URL (%s).",
+                    iss,
+                    self.base_url,
+                )
+        else:
+            logger.warning(
+                "JWT validation: token has no 'iss' claim. "
+                "Cannot verify issuer from token payload."
+            )
 
     # ------------------------------------------------------------------
     # Low-level HTTP

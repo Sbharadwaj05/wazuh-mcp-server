@@ -26,6 +26,7 @@ import sys
 from mcp.server.fastmcp import FastMCP
 
 from wazuh_mcp.client import WazuhClient
+from wazuh_mcp.logging_config import configure_logging
 from wazuh_mcp.tools import (
     agents,
     alerts,
@@ -42,11 +43,7 @@ from wazuh_mcp.tools import analysis as analysis_tools
 # Logging
 # ---------------------------------------------------------------------------
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    stream=sys.stderr,
-)
+configure_logging()
 logger = logging.getLogger("wazuh-mcp")
 
 # ---------------------------------------------------------------------------

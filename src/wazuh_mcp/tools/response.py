@@ -22,7 +22,13 @@ import mcp.types as types
 from mcp.server.fastmcp import FastMCP
 
 from wazuh_mcp.client import WazuhClient
+from wazuh_mcp.output import compact
+from wazuh_mcp.safe_tool import safe_tool
 from wazuh_mcp.utils import format_json
+from wazuh_mcp.validators import (
+    validate_agent_id,
+    validate_soft_text,
+)
 
 # Simple in-memory confirmation store (cleared on server restart)
 _pending_confirmations: dict[str, dict] = {}
@@ -62,6 +68,7 @@ def register_response(mcp: FastMCP, client: WazuhClient) -> None:
             "again with confirm=True and the correct confirmation_token to execute."
         ),
     )
+    @safe_tool("wazuh_run_active_response")
     async def wazuh_run_active_response(
         agent_id: str = types.Field(
             description="Target agent ID (e.g., '001')",
@@ -96,98 +103,105 @@ def register_response(mcp: FastMCP, client: WazuhClient) -> None:
                 "Required when confirm=True."
             ),
         ),
+        compact_output: bool = types.Field(
+            default=False,
+            description="Return token-efficient compact output",
+        ),
     ) -> str:
-        try:
-            # Parse arguments if provided as JSON string
-            parsed_args: Optional[List[str]] = None
-            if arguments:
-                try:
-                    parsed_args = json.loads(arguments)
-                    if not isinstance(parsed_args, list):
-                        return format_json(
-                            {
-                                "error": 'arguments must be a JSON array, e.g., \'["srcip", "10.0.0.50"]\''
-                            }
-                        )
-                except json.JSONDecodeError:
+        # --- input validation ---
+        validate_agent_id(agent_id)
+        validate_soft_text(command, param_name="command")
+        if arguments is not None:
+            validate_soft_text(arguments, param_name="arguments")
+        if confirmation_token is not None:
+            validate_soft_text(confirmation_token, param_name="confirmation_token")
+
+        # Parse arguments if provided as JSON string
+        parsed_args: Optional[List[str]] = None
+        if arguments:
+            try:
+                parsed_args = json.loads(arguments)
+                if not isinstance(parsed_args, list):
                     return format_json(
-                        {"error": f"Invalid JSON in arguments: {arguments}"}
+                        {
+                            "error": 'arguments must be a JSON array, e.g., \'["srcip", "10.0.0.50"]\''
+                        }
                     )
+            except json.JSONDecodeError:
+                return format_json({"error": f"Invalid JSON in arguments: {arguments}"})
 
-            # Build action description for confirmation
-            action_desc = f"Active response: '{command}' on agent {agent_id}"
-            if parsed_args:
-                action_desc += f" with args {parsed_args}"
+        # Build action description for confirmation
+        action_desc = f"Active response: '{command}' on agent {agent_id}"
+        if parsed_args:
+            action_desc += f" with args {parsed_args}"
 
-            # --- CONFIRMATION GATE ---
-            if not confirm:
-                token = _generate_token(action_desc)
-                _pending_confirmations[token] = {
-                    "agent_id": agent_id,
-                    "command": command,
-                    "arguments": parsed_args,
-                    "created_at": time.time(),
-                    "expires_at": time.time() + 300,  # 5-minute expiry
+        # --- CONFIRMATION GATE ---
+        if not confirm:
+            token = _generate_token(action_desc)
+            _pending_confirmations[token] = {
+                "agent_id": agent_id,
+                "command": command,
+                "arguments": parsed_args,
+                "created_at": time.time(),
+                "expires_at": time.time() + 300,  # 5-minute expiry
+            }
+
+            return CONFIRMATION_WARNING.format(token=token) + format_json(
+                {
+                    "status": "AWAITING_CONFIRMATION",
+                    "action": action_desc,
+                    "confirmation_token": token,
+                    "expires_in_seconds": 300,
+                    "instructions": (
+                        "Review the action above. If you intend to execute it, "
+                        "call wazuh_run_active_response again with "
+                        f"confirm=True and confirmation_token='{token}'"
+                    ),
                 }
-
-                return CONFIRMATION_WARNING.format(token=token) + format_json(
-                    {
-                        "status": "AWAITING_CONFIRMATION",
-                        "action": action_desc,
-                        "confirmation_token": token,
-                        "expires_in_seconds": 300,
-                        "instructions": (
-                            "Review the action above. If you intend to execute it, "
-                            "call wazuh_run_active_response again with "
-                            f"confirm=True and confirmation_token='{token}'"
-                        ),
-                    }
-                )
-
-            # --- EXECUTION GATE ---
-            if not confirmation_token:
-                return format_json(
-                    {
-                        "error": "confirmation_token is required when confirm=True. "
-                        "Call without confirm=True first to get a token."
-                    }
-                )
-
-            pending = _pending_confirmations.pop(confirmation_token, None)
-            if pending is None:
-                return format_json(
-                    {
-                        "error": "Invalid or expired confirmation_token. "
-                        "Call without confirm=True to get a fresh token."
-                    }
-                )
-
-            if time.time() > pending.get("expires_at", 0):
-                return format_json(
-                    {
-                        "error": "Confirmation token has expired (5-minute window). "
-                        "Call without confirm=True to get a fresh token."
-                    }
-                )
-
-            # --- EXECUTE ---
-            result = await client.run_active_response(
-                agent_id=agent_id,
-                command=command,
-                arguments=parsed_args,
             )
 
+        # --- EXECUTION GATE ---
+        if not confirmation_token:
             return format_json(
                 {
-                    "status": "EXECUTED",
-                    "action": action_desc,
-                    "result": result,
-                    "warning": "Active response has been triggered. Monitor the agent for effects.",
+                    "error": "confirmation_token is required when confirm=True. "
+                    "Call without confirm=True first to get a token."
                 }
             )
 
-        except Exception as e:
-            return format_json({"error": str(e)})
+        pending = _pending_confirmations.pop(confirmation_token, None)
+        if pending is None:
+            return format_json(
+                {
+                    "error": "Invalid or expired confirmation_token. "
+                    "Call without confirm=True to get a fresh token."
+                }
+            )
+
+        if time.time() > pending.get("expires_at", 0):
+            return format_json(
+                {
+                    "error": "Confirmation token has expired (5-minute window). "
+                    "Call without confirm=True to get a fresh token."
+                }
+            )
+
+        # --- EXECUTE ---
+        result = await client.run_active_response(
+            agent_id=agent_id,
+            command=command,
+            arguments=parsed_args,
+        )
+
+        response_result = {
+            "status": "EXECUTED",
+            "action": action_desc,
+            "result": result,
+            "warning": "Active response has been triggered. Monitor the agent for effects.",
+        }
+        if compact_output:
+            response_result = compact(response_result)
+        return format_json(response_result)
 
     @mcp.tool(
         name="wazuh_agent_command",
@@ -198,6 +212,7 @@ def register_response(mcp: FastMCP, client: WazuhClient) -> None:
             "You MUST confirm explicitly before the command runs."
         ),
     )
+    @safe_tool("wazuh_agent_command")
     async def wazuh_agent_command(
         agent_id: str = types.Field(
             description="Target agent ID",
@@ -213,64 +228,71 @@ def register_response(mcp: FastMCP, client: WazuhClient) -> None:
             default=None,
             description="🔒 SAFETY: The token from the confirmation prompt.",
         ),
+        compact_output: bool = types.Field(
+            default=False,
+            description="Return token-efficient compact output",
+        ),
     ) -> str:
-        try:
-            action_desc = f"Agent command on {agent_id}: '{command}'"
+        # --- input validation ---
+        validate_agent_id(agent_id)
+        validate_soft_text(command, param_name="command")
+        if confirmation_token is not None:
+            validate_soft_text(confirmation_token, param_name="confirmation_token")
 
-            # --- CONFIRMATION GATE ---
-            if not confirm:
-                token = _generate_token(action_desc)
-                _pending_confirmations[token] = {
-                    "agent_id": agent_id,
-                    "command": command,
-                    "created_at": time.time(),
-                    "expires_at": time.time() + 300,
+        action_desc = f"Agent command on {agent_id}: '{command}'"
+
+        # --- CONFIRMATION GATE ---
+        if not confirm:
+            token = _generate_token(action_desc)
+            _pending_confirmations[token] = {
+                "agent_id": agent_id,
+                "command": command,
+                "created_at": time.time(),
+                "expires_at": time.time() + 300,
+            }
+
+            return CONFIRMATION_WARNING.format(token=token) + format_json(
+                {
+                    "status": "AWAITING_CONFIRMATION",
+                    "action": action_desc,
+                    "confirmation_token": token,
+                    "expires_in_seconds": 300,
+                    "instructions": (
+                        "Review the action above. If you intend to execute it, "
+                        "call wazuh_agent_command again with "
+                        f"confirm=True and confirmation_token='{token}'"
+                    ),
                 }
-
-                return CONFIRMATION_WARNING.format(token=token) + format_json(
-                    {
-                        "status": "AWAITING_CONFIRMATION",
-                        "action": action_desc,
-                        "confirmation_token": token,
-                        "expires_in_seconds": 300,
-                        "instructions": (
-                            "Review the action above. If you intend to execute it, "
-                            "call wazuh_agent_command again with "
-                            f"confirm=True and confirmation_token='{token}'"
-                        ),
-                    }
-                )
-
-            # --- EXECUTION GATE ---
-            if not confirmation_token:
-                return format_json(
-                    {"error": "confirmation_token is required when confirm=True."}
-                )
-
-            pending = _pending_confirmations.pop(confirmation_token, None)
-            if pending is None or time.time() > pending.get("expires_at", 0):
-                return format_json(
-                    {
-                        "error": "Invalid or expired confirmation_token. "
-                        "Call without confirm=True to get a fresh token."
-                    }
-                )
-
-            # --- EXECUTE ---
-            result = await client.run_active_response(
-                agent_id=agent_id,
-                command=command,
-                custom=True,
             )
 
+        # --- EXECUTION GATE ---
+        if not confirmation_token:
+            return format_json(
+                {"error": "confirmation_token is required when confirm=True."}
+            )
+
+        pending = _pending_confirmations.pop(confirmation_token, None)
+        if pending is None or time.time() > pending.get("expires_at", 0):
             return format_json(
                 {
-                    "status": "EXECUTED",
-                    "action": action_desc,
-                    "result": result,
-                    "warning": "Command sent to agent. Monitor for effects.",
+                    "error": "Invalid or expired confirmation_token. "
+                    "Call without confirm=True to get a fresh token."
                 }
             )
 
-        except Exception as e:
-            return format_json({"error": str(e)})
+        # --- EXECUTE ---
+        result = await client.run_active_response(
+            agent_id=agent_id,
+            command=command,
+            custom=True,
+        )
+
+        agent_result = {
+            "status": "EXECUTED",
+            "action": action_desc,
+            "result": result,
+            "warning": "Command sent to agent. Monitor for effects.",
+        }
+        if compact_output:
+            agent_result = compact(agent_result)
+        return format_json(agent_result)

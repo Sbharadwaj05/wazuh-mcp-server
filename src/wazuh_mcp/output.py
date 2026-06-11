@@ -125,11 +125,81 @@ def format_for_llm(
     """
     result = data
 
-    # Note: field selection is applied at the API query level via
-    # the 'select' parameter — this function documents the modes
-    # and applies post-hoc compactification.
+    # Post-hoc field selection based on mode
+    if mode and mode in MODE_FIELDS:
+        result = _apply_field_selection(result, MODE_FIELDS[mode])
 
     if compact_output:
         result = compact(result)
 
     return result
+
+
+def _apply_field_selection(data: Any, select_str: str) -> Any:
+    """
+    Post-hoc field selection: filter a Wazuh API response to only
+    include fields listed in the select string (comma-separated
+    dot-notation paths like 'rule.id,agent.name,data.srcip').
+
+    Handles the Wazuh API envelope: if data has 'items' (from
+    paginated_result), filters each item. Also handles lists
+    and single dicts.
+    """
+    if not select_str or not data:
+        return data
+
+    fields = [f.strip() for f in select_str.split(",") if f.strip()]
+    if not fields:
+        return data
+
+    # Build a tree of field paths: {"rule": {"id": {}, "level": {}}, "agent": {"name": {}}, ...}
+    field_tree: Dict[str, Any] = {}
+    for f in fields:
+        parts = f.split(".")
+        node = field_tree
+        for p in parts:
+            if p not in node:
+                node[p] = {}
+            node = node[p]
+
+    def _filter_dict(d: dict, tree: dict) -> dict:
+        """Recursively filter a dict to only include paths in the tree."""
+        result: Dict[str, Any] = {}
+        for key, subtree in tree.items():
+            if key in d:
+                value = d[key]
+                if subtree and isinstance(value, dict):
+                    result[key] = _filter_dict(value, subtree)
+                elif subtree and isinstance(value, list):
+                    result[key] = [
+                        _filter_dict(item, subtree) if isinstance(item, dict) else item
+                        for item in value
+                    ]
+                else:
+                    result[key] = value
+        return result
+
+    # Handle the paginated_result envelope: {"items": [...], "total": ..., ...}
+    if isinstance(data, dict) and "items" in data:
+        result = dict(data)  # shallow copy
+        items = data["items"]
+        if isinstance(items, list):
+            result["items"] = [
+                _filter_dict(item, field_tree) if isinstance(item, dict) else item
+                for item in items
+            ]
+        # Keep top-level envelope fields that aren't in the items list
+        return result
+
+    # Handle a list of dicts
+    if isinstance(data, list):
+        return [
+            _filter_dict(item, field_tree) if isinstance(item, dict) else item
+            for item in data
+        ]
+
+    # Handle a single dict
+    if isinstance(data, dict):
+        return _filter_dict(data, field_tree)
+
+    return data

@@ -15,7 +15,17 @@ import mcp.types as types
 from mcp.server.fastmcp import FastMCP
 
 from wazuh_mcp.client import WazuhClient
+from wazuh_mcp.output import compact, get_select_for_mode
+from wazuh_mcp.safe_tool import safe_tool
 from wazuh_mcp.utils import extract_items, extract_total, format_json, paginated_result
+from wazuh_mcp.validators import (
+    validate_agent_id,
+    validate_limit,
+    validate_mitre_technique,
+    validate_offset,
+    validate_rule_id,
+    validate_soft_text,
+)
 
 
 def register_alerts(mcp: FastMCP, client: WazuhClient) -> None:
@@ -29,6 +39,7 @@ def register_alerts(mcp: FastMCP, client: WazuhClient) -> None:
             "or get an overview of recent security events."
         ),
     )
+    @safe_tool("wazuh_list_alerts")
     async def wazuh_list_alerts(
         agent_id: Optional[str] = types.Field(
             default=None,
@@ -70,39 +81,63 @@ def register_alerts(mcp: FastMCP, client: WazuhClient) -> None:
             default=0,
             description="Pagination offset for scrolling through results",
         ),
+        mode: str = types.Field(
+            default="triage",
+            description="Output mode: 'triage', 'detail', 'compliance', 'hunting', 'fleet'",
+        ),
+        compact_output: bool = types.Field(
+            default=False,
+            description="Return token-efficient compact output",
+        ),
     ) -> str:
-        try:
-            data = await client.list_alerts(
-                agent_id=agent_id,
-                agents_list=agents_list,
-                min_level=min_level,
-                rule_id=rule_id,
-                rule_ids=rule_ids,
-                mitre_id=mitre_id,
-                search=search,
-                sort=sort or "-timestamp",
-                limit=min(limit, 500),
-                offset=offset,
-            )
-            items = extract_items(data)
-            total = extract_total(data)
+        # --- input validation ---
+        if agent_id is not None:
+            validate_agent_id(agent_id)
+        if rule_id is not None:
+            validate_rule_id(rule_id)
+        if mitre_id is not None:
+            validate_mitre_technique(mitre_id)
+        if search is not None:
+            validate_soft_text(search)
+        if sort is not None:
+            validate_soft_text(sort)
+        limit = validate_limit(limit, max_limit=500)
+        offset = validate_offset(offset)
 
-            # Add a human-readable summary
-            summary_parts = [f"Found {total} alert(s)"]
-            if min_level:
-                summary_parts.append(f"with level >= {min_level}")
-            if rule_id:
-                summary_parts.append(f"for rule {rule_id}")
-            if mitre_id:
-                summary_parts.append(f"mapped to {mitre_id}")
+        # Resolve select from mode if available
+        select = get_select_for_mode(mode)
 
-            result = paginated_result(
-                items, total, offset, limit, summary=" | ".join(summary_parts)
-            )
-            return format_json(result)
+        data = await client.list_alerts(
+            agent_id=agent_id,
+            agents_list=agents_list,
+            min_level=min_level,
+            rule_id=rule_id,
+            rule_ids=rule_ids,
+            mitre_id=mitre_id,
+            search=search,
+            select=select,
+            sort=sort or "-timestamp",
+            limit=limit,
+            offset=offset,
+        )
+        items = extract_items(data)
+        total = extract_total(data)
 
-        except Exception as e:
-            return format_json({"error": str(e)})
+        # Add a human-readable summary
+        summary_parts = [f"Found {total} alert(s)"]
+        if min_level:
+            summary_parts.append(f"with level >= {min_level}")
+        if rule_id:
+            summary_parts.append(f"for rule {rule_id}")
+        if mitre_id:
+            summary_parts.append(f"mapped to {mitre_id}")
+
+        result = paginated_result(
+            items, total, offset, limit, summary=" | ".join(summary_parts)
+        )
+        if compact_output:
+            result = compact(result)
+        return format_json(result)
 
     @mcp.tool(
         name="wazuh_get_alert",
@@ -111,16 +146,21 @@ def register_alerts(mcp: FastMCP, client: WazuhClient) -> None:
             "Use this when investigating a specific alert from wazuh_list_alerts results."
         ),
     )
+    @safe_tool("wazuh_get_alert")
     async def wazuh_get_alert(
         alert_id: str = types.Field(
             description="The alert ID to retrieve (from wazuh_list_alerts output)",
         ),
+        compact_output: bool = types.Field(
+            default=False,
+            description="Return token-efficient compact output",
+        ),
     ) -> str:
-        try:
-            alert = await client.get_alert(alert_id)
-            return format_json(alert)
-        except Exception as e:
-            return format_json({"error": str(e)})
+        validate_soft_text(alert_id, param_name="alert_id")
+        alert = await client.get_alert(alert_id)
+        if compact_output:
+            alert = compact(alert)
+        return format_json(alert)
 
     @mcp.tool(
         name="wazuh_alert_summary",
@@ -130,6 +170,7 @@ def register_alerts(mcp: FastMCP, client: WazuhClient) -> None:
             "Use this as the first step in security posture assessment or shift handoff."
         ),
     )
+    @safe_tool("wazuh_alert_summary")
     async def wazuh_alert_summary(
         hours_back: int = types.Field(
             default=24,
@@ -139,64 +180,74 @@ def register_alerts(mcp: FastMCP, client: WazuhClient) -> None:
             default=7,
             description="Minimum alert level to include (default: 7, moderate and above)",
         ),
+        mode: str = types.Field(
+            default="triage",
+            description="Output mode: 'triage', 'detail', 'compliance', 'hunting', 'fleet'",
+        ),
+        compact_output: bool = types.Field(
+            default=False,
+            description="Return token-efficient compact output",
+        ),
     ) -> str:
-        try:
-            data = await client.list_alerts(
-                min_level=min_level,
-                sort="-timestamp",
-                limit=500,
-                select="rule.id,rule.level,rule.description,rule.mitre.id,agent.id,agent.name,data.srcip,timestamp",
+        select = (
+            get_select_for_mode(mode)
+            or "rule.id,rule.level,rule.description,rule.mitre.id,agent.id,agent.name,data.srcip,timestamp"
+        )
+        data = await client.list_alerts(
+            min_level=min_level,
+            sort="-timestamp",
+            limit=500,
+            select=select,
+        )
+        items = extract_items(data)
+        total = extract_total(data)
+
+        if not items:
+            return format_json(
+                {
+                    "summary": f"No alerts level >= {min_level} in the last {hours_back}h",
+                    "total": 0,
+                }
             )
-            items = extract_items(data)
-            total = extract_total(data)
 
-            if not items:
-                return format_json(
-                    {
-                        "summary": f"No alerts level >= {min_level} in the last {hours_back}h",
-                        "total": 0,
-                    }
-                )
+        # Compute aggregates
+        level_counts = Counter()
+        rule_counts: Counter = Counter()
+        mitre_counts: Counter = Counter()
+        agent_counts: Counter = Counter()
+        srcip_counts: Counter = Counter()
 
-            # Compute aggregates
-            level_counts = Counter()
-            rule_counts: Counter = Counter()
-            mitre_counts: Counter = Counter()
-            agent_counts: Counter = Counter()
-            srcip_counts: Counter = Counter()
+        for alert in items:
+            rule = alert.get("rule", {})
+            agent = alert.get("agent", {})
+            data_fields = alert.get("data", {})
 
-            for alert in items:
-                rule = alert.get("rule", {})
-                agent = alert.get("agent", {})
-                data_fields = alert.get("data", {})
+            level = rule.get("level", "unknown")
+            rule_desc = rule.get("description", "unknown")
+            level_counts[level] += 1
+            rule_counts[rule_desc] += 1
 
-                level = rule.get("level", "unknown")
-                rule_desc = rule.get("description", "unknown")
-                level_counts[level] += 1
-                rule_counts[rule_desc] += 1
+            for mitre_entry in rule.get("mitre", {}).get("id", []) or []:
+                mitre_counts[mitre_entry] += 1
 
-                for mitre_entry in rule.get("mitre", {}).get("id", []) or []:
-                    mitre_counts[mitre_entry] += 1
+            agent_name = agent.get("name", "unknown")
+            agent_counts[agent_name] += 1
 
-                agent_name = agent.get("name", "unknown")
-                agent_counts[agent_name] += 1
+            srcip = data_fields.get("srcip")
+            if srcip:
+                srcip_counts[srcip] += 1
 
-                srcip = data_fields.get("srcip")
-                if srcip:
-                    srcip_counts[srcip] += 1
-
-            summary = {
-                "total_alerts_analyzed": len(items),
-                "total_alerts_available": total,
-                "time_window_hours": hours_back,
-                "min_level": min_level,
-                "severity_distribution": dict(level_counts.most_common()),
-                "top_rules": dict(rule_counts.most_common(10)),
-                "top_mitre_techniques": dict(mitre_counts.most_common(10)),
-                "top_agents": dict(agent_counts.most_common(10)),
-                "top_source_ips": dict(srcip_counts.most_common(10)),
-            }
-            return format_json(summary)
-
-        except Exception as e:
-            return format_json({"error": str(e)})
+        summary = {
+            "total_alerts_analyzed": len(items),
+            "total_alerts_available": total,
+            "time_window_hours": hours_back,
+            "min_level": min_level,
+            "severity_distribution": dict(level_counts.most_common()),
+            "top_rules": dict(rule_counts.most_common(10)),
+            "top_mitre_techniques": dict(mitre_counts.most_common(10)),
+            "top_agents": dict(agent_counts.most_common(10)),
+            "top_source_ips": dict(srcip_counts.most_common(10)),
+        }
+        if compact_output:
+            summary = compact(summary)
+        return format_json(summary)
