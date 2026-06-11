@@ -40,6 +40,8 @@ services:
       - "9200:9200/tcp"
     environment:
       - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+      # ⚠️ DEV ONLY: Security plugin disabled for local testing.
+      # In production, remove these two lines and configure certificates.
       - "DISABLE_INSTALL_DEMO_CONFIG=true"
       - "DISABLE_SECURITY_PLUGIN=true"
       - "discovery.type=single-node"
@@ -93,7 +95,10 @@ services:
       - WAZUH_API_URL=https://wazuh.manager:55000
       - WAZUH_USERNAME=admin
       - WAZUH_PASSWORD=SecretPassword
-      - WAZUH_INSECURE=true
+      # WAZUH_INSECURE must be false in production — TLS verification is
+      # required for any deployment outside localhost dev. The Wazuh indexer
+      # security plugin must also be enabled (remove DISABLE_SECURITY_PLUGIN).
+      - WAZUH_INSECURE=false
       - WAZUH_MCP_HOST=0.0.0.0
       - WAZUH_MCP_PORT=8000
       - WAZUH_RATE_LIMIT_TOKENS=30

@@ -353,9 +353,60 @@ asyncio.run(t())
 
 ---
 
+## 🔒 Production Hardening
+
+This project ships with safe defaults, but the docker-compose demo stack disables
+several security features for ease of local testing. **Do not use the demo config
+in production** without these changes:
+
+### 1. Enable TLS Everywhere
+
+- Set `WAZUH_INSECURE=false` — the docker-compose now defaults to `false`.
+- Re-enable the Wazuh Indexer security plugin — remove
+  `DISABLE_SECURITY_PLUGIN=true` and `plugins.security.disabled=true` from the
+  `wazuh.indexer` service. Generate proper certificates instead.
+- Set `FILEBEAT_SSL_VERIFICATION_MODE=full` on the Wazuh Manager.
+
+### 2. Restrict the MCP Endpoint
+
+The MCP server exposes an HTTP endpoint on port 8000. **This endpoint has no
+built-in client authentication.** In production:
+- Bind to `127.0.0.1` if the AI client runs on the same host, OR
+- Place the MCP server behind a reverse proxy with mutual TLS / API key auth, OR
+- Use network-level controls (firewall rules, security groups) to restrict access.
+
+### 3. Secure the Wazuh Indexer
+
+The Indexer (port 9200) must be network-accessible from the MCP server.
+- Use TLS with certificate verification (`WAZUH_INSECURE=false`).
+- Store Indexer credentials in a secrets manager (Docker secrets, Kubernetes
+  secrets, HashiCorp Vault) — never in plaintext `.env` files in production.
+- Consider IP whitelisting at the network/firewall layer.
+
+### 4. Harden the Audit Log
+
+- The default audit log location is `~/.wazuh-mcp/audit.jsonl`. In production,
+  set `WAZUH_AUDIT_LOG=/var/log/wazuh-mcp/audit.jsonl` (or another persistent
+  volume outside the home directory).
+- For true immutability, ship audit logs to an external SIEM or use a
+  write-once-read-many (WORM) filesystem.
+
+### 5. RBAC: Enable It
+
+RBAC is disabled by default (`WAZUH_RBAC_ROLE` is unset → all tools available).
+In production, set `WAZUH_RBAC_ROLE=analyst` (or stricter) and configure tool
+permissions in your AI client to match.
+
+### 6. Version Compatibility
+
+This server targets Wazuh 4.x (tested on 4.14.5). Wazuh 5.x replaces the Indexer
+with a new storage back-end — this server will require updates to work with 5.x.
+Check your Wazuh version before deploying.
+
 ## 🔒 Security Policy
 
-See [docs/SECURITY.md](docs/SECURITY.md) for full defense-in-depth documentation (6 layers), production deployment checklist, and vulnerability reporting process.
+See [docs/SECURITY.md](docs/SECURITY.md) for full defense-in-depth documentation
+(6 layers), production deployment checklist, and vulnerability reporting process.
 
 ## 🛠️ Troubleshooting
 

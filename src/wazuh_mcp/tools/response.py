@@ -13,8 +13,8 @@ Active response & incident response tools.
 
 from __future__ import annotations
 
-import hashlib
 import json
+import secrets
 import time
 from typing import List, Optional
 
@@ -35,9 +35,8 @@ _pending_confirmations: dict[str, dict] = {}
 
 
 def _generate_token(action_desc: str) -> str:
-    """Produce a short confirmation token from the action description."""
-    raw = f"{action_desc}-{time.time()}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:8]
+    """Produce a cryptographically random confirmation token."""
+    return secrets.token_hex(16)
 
 
 def register_response(mcp: FastMCP, client: WazuhClient) -> None:
