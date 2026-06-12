@@ -1,6 +1,6 @@
 """
 Safe-tool decorator that wraps async MCP tool functions with structured
-error handling, preventing raw tracebacks from leaking to the LLM.
+error handling, RBAC enforcement, and rate limiting.
 """
 
 from __future__ import annotations
@@ -20,25 +20,69 @@ from wazuh_mcp.utils import format_json
 
 logger = logging.getLogger("wazuh-mcp.safe_tool")
 
+# Lazy imports to avoid circular dependencies at module load
+_rbac = None
+_limiter = None
+
+
+def _get_rbac():
+    global _rbac
+    if _rbac is None:
+        from wazuh_mcp.rbac import get_rbac_enforcer
+
+        _rbac = get_rbac_enforcer()
+    return _rbac
+
+
+def _get_limiter():
+    global _limiter
+    if _limiter is None:
+        from wazuh_mcp.rate_limiter import get_rate_limiter
+
+        _limiter = get_rate_limiter()
+    return _limiter
+
 
 def safe_tool(tool_name: str):
     """
     Decorator that wraps an async MCP tool function.
 
-    Catches known exception types and returns structured JSON error
-    responses of the form ``{"error": {"type": "...", "message": "..."}}``.
-
-    - :class:`ValidationError` — invalid input (logged at WARNING)
-    - :class:`RateLimitError` — rate limit (logged at WARNING)
-    - :class:`AuthError` — auth failure (logged at ERROR)
-    - :class:`WazuhAPIError` — upstream API error (logged at ERROR)
-    - :class:`ValueError` — from validators, converted to ValidationError
-    - :class:`Exception` — last resort, returned as :class:`ToolError`
+    Enforces:
+    - RBAC: rejects the call if the configured role lacks access
+    - Rate limiting: rejects if the token bucket is empty
+    - Structured error responses for known exception types
     """
 
     def decorator(func: Callable):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
+            # --- RBAC gate ---
+            rbac = _get_rbac()
+            if rbac._enabled and not rbac.is_allowed(tool_name):
+                logger.warning("RBAC blocked tool '%s'", tool_name)
+                return format_json(
+                    {
+                        "error": {
+                            "type": "AccessDenied",
+                            "message": f"Tool '{tool_name}' is not allowed for the current RBAC role.",
+                        }
+                    }
+                )
+
+            # --- Rate limit gate ---
+            limiter = _get_limiter()
+            if not limiter.check(tool_name):
+                logger.warning("Rate limit hit for '%s'", tool_name)
+                return format_json(
+                    {
+                        "error": {
+                            "type": "RateLimited",
+                            "message": f"Tool '{tool_name}' is rate-limited. Retry shortly.",
+                        }
+                    }
+                )
+
+            # --- Execute ---
             try:
                 return await func(*args, **kwargs)
             except ValidationError as e:

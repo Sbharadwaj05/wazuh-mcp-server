@@ -21,6 +21,7 @@ from typing import List, Optional
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
 
+from wazuh_mcp.audit import record_action
 from wazuh_mcp.client import WazuhClient
 from wazuh_mcp.output import compact
 from wazuh_mcp.safe_tool import safe_tool
@@ -192,6 +193,14 @@ def register_response(mcp: FastMCP, client: WazuhClient) -> None:
             arguments=parsed_args,
         )
 
+        # Record to immutable audit log
+        record_action(
+            "wazuh_run_active_response",
+            action_desc,
+            {"agent_id": agent_id, "command": command, "arguments": parsed_args},
+            {"status": "EXECUTED", "result": str(result)[:500]},
+        )
+
         response_result = {
             "status": "EXECUTED",
             "action": action_desc,
@@ -284,6 +293,14 @@ def register_response(mcp: FastMCP, client: WazuhClient) -> None:
             agent_id=agent_id,
             command=command,
             custom=True,
+        )
+
+        # Record to immutable audit log
+        record_action(
+            "wazuh_agent_command",
+            action_desc,
+            {"agent_id": agent_id, "command": command},
+            {"status": "EXECUTED", "result": str(result)[:500]},
         )
 
         agent_result = {
