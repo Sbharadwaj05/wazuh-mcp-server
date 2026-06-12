@@ -31,7 +31,7 @@ jobs:
         run: python -m pytest tests/ -v --tb=short
 
       - name: Verify import
-        run: python -c "import wazuh_mcp; print(f'wazuh-mcp v{wazuh_mcp.__version__}')"
+        run: python -c "import wazuh_mcp; print(f'sb-siem-mcp v{wazuh_mcp.__version__}')"
 
       - name: SAST scan
         run: |

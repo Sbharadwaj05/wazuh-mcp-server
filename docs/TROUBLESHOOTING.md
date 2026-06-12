@@ -208,7 +208,7 @@ sudo systemctl restart filebeat
 
 **Fix:**
 ```bash
-cd /path/to/wazuh-mcp-server
+cd /path/to/sb-siem-mcp
 pip install -e ".[dev]"
 ```
 

@@ -1,13 +1,17 @@
-# 🔐 Wazuh MCP Server
+# 🔐 SB SIEM MCP
+
+> **Note:** Independent, third-party project — not affiliated with or endorsed
+> by Wazuh Inc. Actively developed and tested against live Wazuh instances;
+> review and test before production deployment.
 
 **28 MCP tools. 9 domains. 100% operational on Wazuh 4.14.5. AI-powered security operations for Wazuh SIEM/XDR.**
 
 <p align="center">
-  <a href="https://github.com/Sbharadwaj05/wazuh-mcp-server/actions/workflows/ci.yml"><img src="https://github.com/Sbharadwaj05/wazuh-mcp-server/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/Sbharadwaj05/wazuh-mcp-server/actions/workflows/security-scan.yml"><img src="https://github.com/Sbharadwaj05/wazuh-mcp-server/actions/workflows/security-scan.yml/badge.svg" alt="Security Scan"></a>
+  <a href="https://github.com/Sbharadwaj05/sb-siem-mcp/actions/workflows/ci.yml"><img src="https://github.com/Sbharadwaj05/sb-siem-mcp/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Sbharadwaj05/sb-siem-mcp/actions/workflows/security-scan.yml"><img src="https://github.com/Sbharadwaj05/sb-siem-mcp/actions/workflows/security-scan.yml/badge.svg" alt="Security Scan"></a>
   <img src="https://img.shields.io/badge/tools-28%20%2F%2028%20operational-brightgreen" alt="28/28 tools">
   <img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue" alt="Python">
-  <a href="https://github.com/Sbharadwaj05/wazuh-mcp-server/blob/master/LICENSE"><img src="https://img.shields.io/github/license/Sbharadwaj05/wazuh-mcp-server" alt="License: MIT"></a>
+  <a href="https://github.com/Sbharadwaj05/sb-siem-mcp/blob/master/LICENSE"><img src="https://img.shields.io/github/license/Sbharadwaj05/sb-siem-mcp" alt="License: MIT"></a>
 </p>
 
 > *"Show me all critical alerts in the last 6 hours, cross-reference with MITRE ATT&CK, and check if any affected hosts have unpatched CVEs."*
@@ -101,14 +105,14 @@ The MCP server talks to **both** the Wazuh REST API (port 55000, for management)
 ### pip (from PyPI — coming soon)
 
 ```bash
-pip install wazuh-mcp-server
+pip install sb-siem-mcp
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/Sbharadwaj05/wazuh-mcp-server.git
-cd wazuh-mcp-server
+git clone https://github.com/Sbharadwaj05/sb-siem-mcp.git
+cd sb-siem-mcp
 pip install -e ".[dev]"
 ```
 
@@ -117,8 +121,8 @@ pip install -e ".[dev]"
 > ⚠️ **This bundles a full Wazuh stack for quick demos. In production, you already have Wazuh running — just use the pip install above and point to your existing Wazuh.**
 
 ```bash
-git clone https://github.com/Sbharadwaj05/wazuh-mcp-server.git
-cd wazuh-mcp-server
+git clone https://github.com/Sbharadwaj05/sb-siem-mcp.git
+cd sb-siem-mcp
 docker compose up -d
 
 # Wazuh Dashboard:   https://localhost:443
@@ -158,7 +162,7 @@ WAZUH_RATE_LIMIT_PERIOD=60             # Rate limit window
     "wazuh": {
       "command": "python",
       "args": ["-m", "wazuh_mcp.server"],
-      "cwd": "/path/to/wazuh-mcp-server/src",
+      "cwd": "/path/to/sb-siem-mcp/src",
       "env": {
         "WAZUH_API_URL": "https://192.168.56.102:55000",
         "WAZUH_USERNAME": "wazuh-wui",
@@ -284,7 +288,7 @@ export WAZUH_RBAC_ROLE=analyst
 ## 📁 Project Structure
 
 ```
-Wazuh-MCP/
+sb-siem-mcp/
 ├── src/wazuh_mcp/
 │   ├── server.py           # FastMCP entry point (stdio + SSE transport)
 │   ├── client.py           # Wazuh REST API client (JWT, Basic Auth, fallback)
@@ -325,8 +329,8 @@ Wazuh-MCP/
 
 ```bash
 # 1. Clone
-git clone https://github.com/Sbharadwaj05/wazuh-mcp-server.git
-cd wazuh-mcp-server
+git clone https://github.com/Sbharadwaj05/sb-siem-mcp.git
+cd sb-siem-mcp
 
 # 2. Configure
 cp .env.example .env

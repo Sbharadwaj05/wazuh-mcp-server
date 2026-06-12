@@ -83,11 +83,11 @@ services:
       wazuh.indexer:
         condition: service_healthy
 
-  # ---- MCP Server (Production Container) -------------------------------
-  wazuh-mcp:
+  # ---- MCP Server ------------------------------------------------
+  sb-siem-mcp:
     build: .
-    image: wazuh-mcp-server:latest
-    container_name: wazuh-mcp
+    image: sb-siem-mcp:latest
+    container_name: sb-siem-mcp
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -104,7 +104,7 @@ services:
       - WAZUH_RATE_LIMIT_TOKENS=30
       - WAZUH_RATE_LIMIT_PERIOD=60
     volumes:
-      - wazuh_mcp_audit:/home/wazuhmcp/.wazuh-mcp
+      - sb_siem_mcp_audit:/home/wazuhmcp/.wazuh-mcp
     networks:
       - wazuh-net
     depends_on:

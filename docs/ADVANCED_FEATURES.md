@@ -43,7 +43,7 @@ The server supports SSE transport for web-based AI clients:
 python -c "from wazuh_mcp.server import main_sse; main_sse()"
 
 # Or via Docker
-docker run -p 8000:8000 -e WAZUH_API_URL=... wazuh-mcp-server
+docker run -p 8000:8000 -e WAZUH_API_URL=... sb-siem-mcp
 ```
 
 Endpoints:

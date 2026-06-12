@@ -1,8 +1,8 @@
 # ---------------------------------------------------------------------------
-# Multi-stage production Docker build for Wazuh MCP Server
+# Multi-stage production Docker build for SB SIEM MCP
 # ---------------------------------------------------------------------------
-# Build:  docker build -t wazuh-mcp-server:latest .
-# Run:    docker run -e WAZUH_API_URL=https://wazuh:55000 -e WAZUH_USERNAME=admin -e WAZUH_PASSWORD=pass wazuh-mcp-server
+# Build:  docker build -t sb-siem-mcp:latest .
+# Run:    docker run -e WAZUH_API_URL=https://wazuh:55000 -e WAZUH_USERNAME=admin -e WAZUH_PASSWORD=pass sb-siem-mcp
 # ---------------------------------------------------------------------------
 
 # ---- Stage 1: Builder ---------------------------------------------
@@ -21,7 +21,7 @@ FROM python:3.12-slim AS runtime
 LABEL org.opencontainers.image.title="Wazuh MCP Server"
 LABEL org.opencontainers.image.description="AI-powered security operations for Wazuh SIEM/XDR"
 LABEL org.opencontainers.image.version="0.2.0"
-LABEL org.opencontainers.image.source="https://github.com/Sbharadwaj05/wazuh-mcp-server"
+LABEL org.opencontainers.image.source="https://github.com/Sbharadwaj05/sb-siem-mcp"
 
 # Create non-root user
 RUN groupadd -r wazuhmcp && useradd -r -g wazuhmcp -m -s /bin/bash wazuhmcp
@@ -56,5 +56,5 @@ ENV WAZUH_MCP_HOST=0.0.0.0
 ENV WAZUH_MCP_PORT=8000
 
 # Default: SSE transport. For Claude Desktop stdio mode, override with:
-#   docker run ... wazuh-mcp-server python -m wazuh_mcp.server
+#   docker run ... sb-siem-mcp python -m wazuh_mcp.server
 ENTRYPOINT ["python", "-c", "from wazuh_mcp.server import main_sse; main_sse()"]

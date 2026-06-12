@@ -3,7 +3,7 @@
     "wazuh": {
       "command": "python",
       "args": ["-m", "wazuh_mcp.server"],
-      "cwd": "/path/to/Wazuh-MCP/src",
+      "cwd": "/path/to/sb-siem-mcp/src",
       "env": {
         "WAZUH_API_URL": "https://your-wazuh-manager:55000",
         "WAZUH_USERNAME": "wazuh-wui",
