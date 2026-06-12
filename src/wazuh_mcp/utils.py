@@ -11,10 +11,13 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
+from wazuh_mcp.sanitizer import sanitize
+
 
 def format_json(data: Any, indent: int = 2) -> str:
-    """Pretty-print any object as JSON for LLM consumption."""
-    return json.dumps(data, indent=indent, default=str, ensure_ascii=False)
+    """Pretty-print any object as JSON for LLM consumption, with credential redaction."""
+    safe_data = sanitize(data)
+    return json.dumps(safe_data, indent=indent, default=str, ensure_ascii=False)
 
 
 def paginated_result(

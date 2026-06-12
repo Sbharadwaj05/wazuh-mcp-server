@@ -48,7 +48,7 @@ REDACTION_RULES: list[tuple[re.Pattern, str]] = [
     # Generic password patterns in JSON: "password":"..." or "passwd":"..."
     (
         re.compile(r'"(?:password|passwd|secret|token|api_key)"\s*:\s*"[^"]+?"'),
-        r'"\1":"***REDACTED***"',
+        '"REDACTED_FIELD":"***REDACTED***"',
     ),
     # Private SSH keys (PEM header)
     (
