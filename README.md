@@ -4,7 +4,7 @@
 > by Wazuh Inc. Actively developed and tested against live Wazuh instances;
 > review and test before production deployment.
 
-**28 MCP tools. 9 domains. 100% operational on Wazuh 4.14.5. AI-powered security operations for Wazuh SIEM/XDR.**
+**28 MCP tools. 9 domains. Tested on Wazuh 4.14.5 against live instances. AI-powered security operations for Wazuh SIEM/XDR.**
 
 <p align="center">
   <a href="https://github.com/Sbharadwaj05/sb-siem-mcp/actions/workflows/ci.yml"><img src="https://github.com/Sbharadwaj05/sb-siem-mcp/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
