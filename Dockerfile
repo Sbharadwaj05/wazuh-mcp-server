@@ -52,7 +52,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 
 # SSE mode by default (can override CMD for stdio)
 EXPOSE 8000
-ENV WAZUH_MCP_HOST=0.0.0.0
+ENV WAZUH_MCP_HOST=127.0.0.1
 ENV WAZUH_MCP_PORT=8000
 
 # Default: SSE transport. For Claude Desktop stdio mode, override with:

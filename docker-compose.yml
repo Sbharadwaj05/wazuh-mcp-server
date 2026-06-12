@@ -99,7 +99,7 @@ services:
       # required for any deployment outside localhost dev. The Wazuh indexer
       # security plugin must also be enabled (remove DISABLE_SECURITY_PLUGIN).
       - WAZUH_INSECURE=false
-      - WAZUH_MCP_HOST=0.0.0.0
+      - WAZUH_MCP_HOST=127.0.0.1
       - WAZUH_MCP_PORT=8000
       - WAZUH_RATE_LIMIT_TOKENS=30
       - WAZUH_RATE_LIMIT_PERIOD=60

@@ -50,7 +50,7 @@ Your Machine                              Your Wazuh Server
 - [x] **RBAC** — 4 built-in roles: `viewer`, `analyst`, `admin`, `soc` with hierarchical access
 - [x] **Dependabot + pip-audit + CodeQL** — Automated dependency scanning on every push + weekly schedule
 - [x] **Non-root Docker** — Production container runs as unprivileged `wazuhmcp` user
-- [x] **TLS everywhere** — `WAZUH_INSECURE=false` in production, Wazuh API + Indexer both over HTTPS
+- [x] **TLS support** — Verify server certificates, or disable for local dev via `WAZUH_INSECURE`
 - [x] **Prometheus metrics** — 7 metrics exposed on `:9090/metrics` for SOC monitoring (latency, errors, rate limits)
 - [x] **OpenAPI 3.0 / Swagger UI** — Interactive API docs at `/docs`, raw spec at `/openapi.json`
 
@@ -119,6 +119,8 @@ pip install -e ".[dev]"
 ### Docker (one‑command demo — spins up Wazuh + MCP for testing)
 
 > ⚠️ **This bundles a full Wazuh stack for quick demos. In production, you already have Wazuh running — just use the pip install above and point to your existing Wazuh.**
+>
+> 🔒 **The MCP endpoint has no built-in client authentication.** The demo server binds to `localhost:8000` — keep it local. For remote access, place it behind a reverse proxy with auth. See [Production Hardening](#-production-hardening) below.
 
 ```bash
 git clone https://github.com/Sbharadwaj05/sb-siem-mcp.git
